@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ressourcenplaner – Lokal (Single‑User)</title>
+  <style>
+    :root{
+      --bg:#0b0c10; --card:#16181d; --muted:#22252c; --text:#eef2f7; --sub:#b9c1d1; --acc:#61dafb; --ok:#2ecc71; --warn:#ffb347; --bad:#ff6b6b;
+    }
+    html,body{height:100%; background:var(--bg); color:var(--text); font:14px/1.4 system-ui,Segoe UI,Roboto,Arial,sans-serif;margin:0}
+    *{box-sizing:border-box}
+    header{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--card);border-bottom:1px solid #222;position:sticky;top:0;z-index:10}
+    header h1{font-size:16px;margin:0;font-weight:600}
+    header .spacer{flex:1}
+    button,input,select{background:var(--muted);color:var(--text);border:1px solid #2b2f38;border-radius:10px;padding:8px 10px}
+    button:hover{filter:brightness(1.08)}
+    .layout{display:grid;grid-template-columns:300px 1fr; height:calc(100% - 58px);}
+    aside{border-right:1px solid #222;background:var(--card);padding:14px;overflow:auto}
+    main{padding:14px; overflow:auto}
+    h2{font-size:13px;margin:14px 0 6px;color:var(--sub);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+    .list{display:flex;flex-direction:column;gap:8px}
+    .row{display:flex;align-items:center;gap:8px}
+    .tag{background:#2b2f38;border:1px solid #39404d;border-radius:999px;padding:2px 8px;color:#c6d1e6;font-size:12px}
+    .card{background:var(--card);border:1px solid #222;border-radius:14px;padding:12px}
+    .grid{border-collapse:separate;border-spacing:0}
+    .grid th,.grid td{border:1px solid #2b2f38;padding:6px 8px;vertical-align:middle}
+    .sticky{position:sticky;left:0;background:var(--card);z-index:5}
+    .head-sticky{position:sticky;top:0;background:var(--card);z-index:6}
+    .dept{min-width:260px}
+    .cell{min-width:98px; cursor:pointer}
+    .gcell-on{background:#263246}
+    .sum{background:#1a1e26;color:#c9d6ea;font-weight:600}
+    .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .pill{border-radius:999px;padding:6px 10px;background:#1c2330;border:1px solid #2b3342}
+    .pill strong{color:#c9d6ea}
+    .danger{color:#fff;background:rgba(255,107,107,.15);border-color:#ff6b6b}
+    .ok{color:#cffff1;background:rgba(46,204,113,.15);border-color:#2ecc71}
+    .muted{color:#b9c1d1}
+    .menu{position:absolute;top:100%;left:0;min-width:240px;max-height:260px;overflow:auto;background:#0f131a;border:1px solid #2b2f38;border-radius:10px;padding:8px;display:none;z-index:20}
+    .menu.open{display:block}
+    .menu input[type="search"]{width:100%;margin-bottom:6px}
+    .item{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
+    .item:hover{background:#1a2230}
+    .item input{accent-color:#5ccfe6}
+
+    .conflict{color:#fff;background:#301a1c;border:1px solid #56292d;border-radius:10px;padding:8px 10px}
+    .small{font-size:12px;color:#aab3c5}
+    .foot{margin-top:6px;display:flex;gap:8px;justify-content:flex-end}
+    .link{color:var(--acc);text-decoration:none}
+
+    .projHeader{background:#10141c;font-weight:700}
+    .filters{display:flex;flex-wrap:wrap; gap:8px; max-height:160px; overflow:auto; padding:8px; background:#0f131a; border:1px solid #2b2f38; border-radius:12px}
+    .filters label{display:flex;align-items:center;gap:6px;background:#171c26;border:1px solid #2b2f38;padding:4px 8px;border-radius:999px}
+    .filters button{padding:6px 8px}
+    /* Modal from previous version kept out to simplify */
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Ressourcenplaner (lokal, Single‑User)</h1>
+    <div class="spacer"></div>
+    <div class="toolbar">
+      <label>Start‑Datum:
+        <input type="date" id="startDate">
+      </label>
+      <button id="prevWeek">◀ Woche</button>
+      <button id="nextWeek">Woche ▶</button>
+      <button id="overviewBtn">Mitarbeiter‑Übersicht</button>
+      <button id="exportBtn">Export JSON</button>
+      <input type="file" id="importFile" style="display:none" accept="application/json"/>
+      <button id="importBtn">Import JSON</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside>
+      <h2>Projekte (ein-/ausblenden)</h2>
+      <div id="projectFilters" class="filters"></div>
+      <div class="row" style="margin-top:6px;gap:6px">
+        <button id="btnAllOn">Alle an</button>
+        <button id="btnAllOff">Alle aus</button>
+        <button id="addProjectBtn">+ Projekt</button>
+        <button id="renameProjectBtn">Umbenennen</button>
+      </div>
+
+      <h2 style="margin-top:16px">Mitarbeiter</h2>
+      <div class="row">
+        <input id="newRes" placeholder="Name hinzufügen…"/>
+        <button id="addResBtn">Hinzufügen</button>
+      </div>
+      <div id="resList" class="list" style="margin-top:8px"></div>
+
+      <h2 style="margin-top:18px">Konflikte</h2>
+      <div id="conflicts" class="list"></div>
+      <p class="small" style="margin-top:10px">Konflikt = Person ist am selben Tag in mehreren Projekten eingeplant.</p>
+    </aside>
+
+    <main>
+      <div class="card">
+        <div class="toolbar" style="margin-bottom:10px">
+          <span class="pill">Zeitraum‑Anzeige: <strong id="rangeLabel"></strong></span>
+          <span class="pill ok" id="stats"></span>
+        </div>
+        <div style="overflow:auto">
+          <table class="grid" id="grid"></table>
+        </div>
+        <div class="foot small">Tipp: In Gantt‑Zeilen Zellen anklicken, um einzelne Zellen zu markieren. In Abteilungszeilen klick → Mitarbeitende auswählen (Mehrfachauswahl). 10 h/Tag pro Person. Trenner „ | “.</div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Multi‑Select Menu -->
+  <div id="multiMenu" class="menu"></div>
+
+  <script>
+  // ====== Utility ======
+  const $=sel=>document.querySelector(sel); const $$=sel=>Array.from(document.querySelectorAll(sel));
+  const fmtCW = (d)=>{ const dow=d.toLocaleDateString('de-AT',{weekday:'short'}).slice(0,2).toUpperCase(); const w=getISOWeek(d); return `${dow} CW${String(w).padStart(2,'0')}`; };
+  function getISOWeek(date){ const d=new Date(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate())); const dayNum=d.getUTCDay()||7; d.setUTCDate(d.getUTCDate()+4-dayNum); const yearStart=new Date(Date.UTC(d.getUTCFullYear(),0,1)); return Math.ceil((((d-yearStart)/86400000)+1)/7); }
+  const STORAGE_KEY='resplan_v3';
+  const START_MIN=new Date('2025-01-01'); const END_MAX=new Date('2026-12-31');
+  const HOURS_PER_DAY=10; const DEPTS=['MD','ED','SOW','MA','EA','PM'];
+  const GANTT=[
+    {key:'G1', label:'Gantt 1 – MD'},
+    {key:'G2', label:'Gantt 2 – ED'},
+    {key:'G3', label:'Gantt 3 – PUR'},
+    {key:'G4', label:'Gantt 4 – SOW Offline'},
+    {key:'G5', label:'Gantt 5 – MA'},
+    {key:'G6', label:'Gantt 6 – EA'},
+    {key:'G7', label:'Gantt 7 – SOW'},
+    {key:'G8', label:'Gantt 8 – Customer'}
+  ];
+
+  const state = load() || {
+    resources:[ 'Mitarbeiter 1','Mitarbeiter 2','Mitarbeiter 3' ],
+    projects:[ { id:crypto.randomUUID(), name:'Projekt 1', visible:true, data:{} },
+               { id:crypto.randomUUID(), name:'Projekt 2', visible:true, data:{} } ],
+    ui:{ start: normStart(new Date().toISOString().slice(0,10)) }
+  };
+
+  function normStart(dateStr){
+    let d=new Date(dateStr||START_MIN); if(d<START_MIN) d=new Date(START_MIN); if(d>END_MAX) d=new Date(END_MAX);
+    const day=d.getDay(); const diff=(day===0? -6 : 1-day); d.setDate(d.getDate()+diff); // Monday
+    return d.toISOString().slice(0,10);
+  }
+
+  function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); render(); }
+  function load(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)); }catch(e){ return null; } }
+
+  const startDateInput=$('#startDate');
+
+  function init(){
+    // Filters UI
+    buildProjectFilters();
+    // Start range
+    state.ui.start=normStart(state.ui.start); startDateInput.value=state.ui.start;
+    render();
+  }
+
+  function rangeDays(){
+    const start=new Date(state.ui.start);
+    const days=[...Array(14)].map((_,i)=> new Date(start.getFullYear(),start.getMonth(),start.getDate()+i));
+    return days.filter(d=>d>=START_MIN && d<=END_MAX);
+  }
+
+  function render(){
+    const days=rangeDays();
+    $('#rangeLabel').textContent = days.length? `${days[0].toLocaleDateString('de-AT')} – ${days[days.length-1].toLocaleDateString('de-AT')}` : '';
+    $('#stats').textContent = `${state.resources.length} Personen • ${state.projects.length} Projekt(e)`;
+
+    const grid=$('#grid'); grid.innerHTML='';
+    // header
+    const thead=document.createElement('thead');
+    const hr=document.createElement('tr');
+    const empty=document.createElement('th'); empty.className='head-sticky sticky dept'; empty.textContent='Beschreibung / Fachabteilung'; hr.appendChild(empty);
+    days.forEach(d=>{ const th=document.createElement('th'); th.className='head-sticky'; th.textContent=fmtCW(d); hr.appendChild(th); });
+    thead.appendChild(hr); grid.appendChild(thead);
+
+    const tbody=document.createElement('tbody');
+
+    // Visible projects stacked
+    state.projects.filter(p=>p.visible!==false).forEach((p,pi)=>{
+      // project header row
+      const pr=document.createElement('tr'); const cell=document.createElement('th');
+      cell.className='sticky dept projHeader'; cell.textContent=p.name; pr.appendChild(cell);
+      days.forEach(()=>{ const td=document.createElement('td'); td.style.background='#0e1218'; pr.appendChild(td); });
+      tbody.appendChild(pr);
+
+      // Gantt rows (cell-level toggle)
+      GANTT.forEach(g=>{
+        const tr=document.createElement('tr'); const th=document.createElement('th');
+        th.className='sticky dept'; th.textContent=g.label; tr.appendChild(th);
+        days.forEach(d=>{
+          const td=document.createElement('td'); td.className='cell';
+          const dayISO=d.toISOString().slice(0,10);
+          const key=`${dayISO}|${g.key}`;
+          const val=p.data[key]||'';
+          if(val==='#g') td.classList.add('gcell-on');
+          td.addEventListener('click',()=>{ p.data[key]=(p.data[key]==='#g')?'':'#g'; save(); });
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+
+      // Department rows (MD..PM)
+      DEPTS.forEach(dep=>{
+        const tr=document.createElement('tr'); const th=document.createElement('th');
+        th.className='sticky dept'; th.textContent=deptLabel(dep); tr.appendChild(th);
+        days.forEach(d=>{
+          const td=document.createElement('td'); td.className='cell';
+          const dayISO=d.toISOString().slice(0,10);
+          const key=`${dayISO}|D_${dep}`;
+          td.textContent=p.data[key]||'';
+          td.addEventListener('click',()=> openMulti(td, dayISO, dep, p));
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+
+      // Sum row
+      const sr=document.createElement('tr'); const sth=document.createElement('th');
+      sth.className='sticky dept sum'; sth.textContent='Summe Stunden (10 h × Anzahl Namen)'; sr.appendChild(sth);
+      days.forEach(d=>{ const td=document.createElement('td'); td.className='sum'; td.textContent=String(sumHoursForDay(p, d.toISOString().slice(0,10))); sr.appendChild(td); });
+      tbody.appendChild(sr);
+    });
+
+    grid.appendChild(tbody);
+
+    renderResources();
+    renderConflicts();
+  }
+
+  function deptLabel(dep){ switch(dep){case'MD':return'MD (Mechanic Design)';case'ED':return'ED (Electrical Design)';case'SOW':return'SOW (Software)';case'MA':return'MA (Mechanical Assembly)';case'EA':return'EA (Electrical Assembly)';case'PM':return'PM (Project Management)';default:return dep;} }
+
+  function sumHoursForDay(project, dayISO){
+    let total=0;
+    DEPTS.forEach(dep=>{ const key=`${dayISO}|D_${dep}`; const s=project.data[key]||''; if(s.trim()){ const n=s.split(' | ').filter(Boolean).length; total+=n*HOURS_PER_DAY; } });
+    return total;
+  }
+
+  // ====== Multi‑Select (per project) ======
+  const menu=$('#multiMenu'); let menuAnchor=null; let menuCtx=null;
+  function openMulti(anchor, dayISO, dep, project){
+    menuAnchor=anchor; menuCtx={ dayISO, dep, project };
+    const rect=anchor.getBoundingClientRect(); menu.style.left = `${rect.left}px`; menu.style.top = `${rect.bottom+4}px`;
+    menu.innerHTML='';
+    const search=document.createElement('input'); search.type='search'; search.placeholder='Suchen…'; menu.appendChild(search);
+    const list=document.createElement('div'); menu.appendChild(list);
+    function rebuild(){
+      list.innerHTML='';
+      const filter=(search.value||'').toLowerCase();
+      const selected = getCellAssignments(project, dayISO, dep);
+      state.resources.filter(n=>n.toLowerCase().includes(filter)).forEach(name=>{
+        const it=document.createElement('label'); it.className='item';
+        const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=selected.includes(name);
+        cb.addEventListener('change',()=> toggleAssign(name));
+        const span=document.createElement('span'); span.textContent=name;
+        it.appendChild(cb); it.appendChild(span); list.appendChild(it);
+      });
+    }
+    function toggleAssign(name){
+      const key=`${dayISO}|D_${dep}`; const cur=(project.data[key]||'').split(' | ').filter(Boolean);
+      const idx=cur.indexOf(name); if(idx>=0) cur.splice(idx,1); else cur.push(name);
+      project.data[key]=cur.join(' | '); save();
+    }
+    search.addEventListener('input', rebuild);
+    menu.classList.add('open'); rebuild();
+    const close=(e)=>{ if(e && (menu.contains(e.target)|| e.target===anchor)) return; menu.classList.remove('open'); document.removeEventListener('mousedown', close); };
+    setTimeout(()=> document.addEventListener('mousedown', close));
+  }
+  function getCellAssignments(project, dayISO, dep){ const key=`${dayISO}|D_${dep}`; const s=project.data[key]||''; return s? s.split(' | '):[]; }
+
+  // ====== Resource management ======
+  function renderResources(){
+    const box=$('#resList'); box.innerHTML='';
+    state.resources.forEach((name,i)=>{
+      const row=document.createElement('div'); row.className='row';
+      const tag=document.createElement('span'); tag.className='tag'; tag.textContent=name; row.appendChild(tag);
+      const del=document.createElement('button'); del.textContent='Löschen'; del.onclick=()=>{ state.resources.splice(i,1); save(); };
+      row.appendChild(del); box.appendChild(row);
+    })
+  }
+  $('#addResBtn').onclick=()=>{ const v=$('#newRes').value.trim(); if(!v) return; if(!state.resources.includes(v)){ state.resources.push(v); save(); } $('#newRes').value=''; };
+
+  // ====== Project filters ======
+  function buildProjectFilters(){
+    const box=$('#projectFilters'); box.innerHTML='';
+    state.projects.forEach((p,idx)=>{
+      if(typeof p.visible==='undefined') p.visible=true;
+      const label=document.createElement('label');
+      const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=p.visible; cb.onchange=()=>{ p.visible=cb.checked; save(); };
+      const span=document.createElement('span'); span.textContent=p.name;
+      label.appendChild(cb); label.appendChild(span); box.appendChild(label);
+    });
+  }
+  $('#btnAllOn').onclick=()=>{ state.projects.forEach(p=>p.visible=true); save(); buildProjectFilters(); };
+  $('#btnAllOff').onclick=()=>{ state.projects.forEach(p=>p.visible=false); save(); buildProjectFilters(); };
+  $('#addProjectBtn').onclick=()=>{ const name=prompt('Projektname?','Neues Projekt'); if(!name) return; state.projects.push({id:crypto.randomUUID(), name, visible:true, data:{}}); save(); buildProjectFilters(); };
+  $('#renameProjectBtn').onclick=()=>{
+    const names=state.projects.map((p,i)=>`${i+1}. ${p.name}`).join('\n');
+    const idx=prompt(`Welche Projektnummer umbenennen?\n${names}`); const i=parseInt(idx,10)-1;
+    if(isNaN(i)||i<0||i>=state.projects.length) return;
+    const newName=prompt('Neuer Projektname:', state.projects[i].name); if(!newName) return;
+    state.projects[i].name=newName; save(); buildProjectFilters();
+  };
+
+  // ====== Navigation ======
+  startDateInput.onchange=(e)=>{ state.ui.start = normStart(e.target.value); save(); };
+  $('#prevWeek').onclick=()=>{ const d=new Date(state.ui.start); d.setDate(d.getDate()-7); state.ui.start=normStart(d.toISOString().slice(0,10)); save(); };
+  $('#nextWeek').onclick=()=>{ const d=new Date(state.ui.start); d.setDate(d.getDate()+7); state.ui.start=normStart(d.toISOString().slice(0,10)); save(); };
+
+  // ====== Conflicts ======
+  function renderConflicts(){
+    const box=$('#conflicts'); box.innerHTML='';
+    const issues=findConflicts();
+    if(!issues.length){ const ok=document.createElement('div'); ok.className='pill ok'; ok.textContent='Keine Konflikte'; box.appendChild(ok); return; }
+    issues.sort((a,b)=>a.dateISO.localeCompare(b.dateISO)||a.name.localeCompare(b.name));
+    issues.forEach(it=>{ const div=document.createElement('div'); div.className='conflict'; div.textContent = `${new Date(it.dateISO).toLocaleDateString('de-AT')}: ${it.name} (${it.cnt} Projekte)`; box.appendChild(div); });
+  }
+  function findConflicts(){
+    const map=new Map(); // dateISO -> name -> count
+    state.projects.forEach(p=>{
+      Object.entries(p.data).forEach(([k,val])=>{
+        const [dateISO,rowKey]=k.split('|'); if(!rowKey.startsWith('D_')) return; if(!val) return;
+        const names=val.split(' | ').filter(Boolean);
+        names.forEach(name=>{ const m1=map.get(dateISO)||new Map(); m1.set(name,(m1.get(name)||0)+1); map.set(dateISO,m1); });
+      });
+    });
+    const issues=[]; map.forEach((m,dateISO)=>{ m.forEach((cnt,name)=>{ if(cnt>1) issues.push({dateISO,name,cnt}); }) });
+    return issues;
+  }
+
+  // ====== Export / Import ======
+  $('#exportBtn').onclick=()=>{
+    const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='ressourcenplan.json'; a.click(); URL.revokeObjectURL(a.href);
+  };
+  $('#importBtn').onclick=()=> $('#importFile').click();
+  $('#importFile').addEventListener('change',async(e)=>{
+    const file=e.target.files[0]; if(!file) return; const txt=await file.text();
+    try{ const data=JSON.parse(txt); Object.assign(state, data); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); init(); }catch(err){ alert('Ungültige Datei'); }
+  });
+
+  // Init
+  window.addEventListener('keydown', (e)=>{
+    if(e.key==='Escape'){ document.querySelectorAll('.menu.open').forEach(m=>m.classList.remove('open')); }
+    if(e.ctrlKey && e.key==='ArrowLeft'){ $('#prevWeek').click(); }
+    if(e.ctrlKey && e.key==='ArrowRight'){ $('#nextWeek').click(); }
+  });
+  init();
+  </script>
+</body>
+</html>
