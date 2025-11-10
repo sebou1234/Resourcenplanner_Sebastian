@@ -39,7 +39,7 @@
     .muted{color:#b9c1d1}
     .menu{position:absolute;top:100%;left:0;min-width:240px;max-height:260px;overflow:auto;background:#0f131a;border:1px solid #2b2f38;border-radius:10px;padding:8px;display:none;z-index:20}
     .menu.open{display:block}
-    .menu input[type="search"]{width:100%;margin-bottom:6px}
+    .menu input[type="search"]{width:100%;Margin-bottom:6px}
     .item{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
     .item:hover{background:#1a2230}
     .item input{accent-color:#5ccfe6}
@@ -54,6 +54,16 @@
     .filters label{display:flex;align-items:center;gap:6px;background:#171c26;border:1px solid #2b2f38;padding:4px 8px;border-radius:999px}
     .filters button{padding:6px 8px}
     /* Modal from previous version kept out to simplify */
+
+    /* ===== Mitarbeiterübersicht Modal ===== */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;z-index:50}
+    .modal-overlay.open{display:flex}
+    .modal{background:var(--card);border:1px solid #222;border-radius:12px;padding:16px;min-width:360px;max-width:80%;max-height:80%;overflow:auto;color:var(--text)}
+    .modal h3{margin:0;font-size:15px}
+    .modal .modal-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+    .modal table{width:100%;border-collapse:collapse;margin-top:6px}
+    .modal th,.modal td{padding:6px 8px;border-bottom:1px solid #2b2f38;text-align:left}
+    .modal .close{margin-left:auto;padding:6px 8px}
   </style>
 </head>
 <body>
@@ -112,6 +122,17 @@
 
   <!-- Multi‑Select Menu -->
   <div id="multiMenu" class="menu"></div>
+
+  <!-- ===== Mitarbeiterübersicht Modal (neu) ===== -->
+  <div id="overviewModal" class="modal-overlay" role="dialog" aria-hidden="true">
+    <div class="modal" role="document" aria-modal="true">
+      <div class="modal-head">
+        <h3 id="overviewTitle">Mitarbeiter‑Übersicht</h3>
+        <button id="closeOverview" class="small">Schließen</button>
+      </div>
+      <div id="overviewContent" aria-live="polite"></div>
+    </div>
+  </div>
 
   <script>
   // ====== Utility ======
@@ -342,9 +363,100 @@
     try{ const data=JSON.parse(txt); Object.assign(state, data); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); init(); }catch(err){ alert('Ungültige Datei'); }
   });
 
+  // ====== Mitarbeiterübersicht: berechnen und Modal anzeigen =====
+  function buildEmployeeOverview() {
+    const days = rangeDays();
+    const visibleProjects = state.projects.filter(p=>p.visible!==false);
+    const map = new Map();
+    // initialize from known resources so they appear even when unassigned
+    state.resources.forEach(name => map.set(name, { assignments: 0, hours: 0 }));
+
+    visibleProjects.forEach(p => {
+      days.forEach(d=>{
+        const dayISO = d.toISOString().slice(0,10);
+        DEPTS.forEach(dep=>{
+          const key = `${dayISO}|D_${dep}`;
+          const cell = p.data[key] || '';
+          if(!cell) return;
+          const names = cell.split(' | ').filter(Boolean);
+          names.forEach(n=>{
+            if(!map.has(n)) map.set(n, { assignments: 0, hours: 0 });
+            const cur = map.get(n);
+            cur.assignments += 1;
+            cur.hours += HOURS_PER_DAY;
+          });
+        });
+      });
+    });
+
+    // summarize conflict days per person within visible projects/days
+    const conflicts = findConflicts();
+    const conflictCount = conflicts.reduce((acc,c)=>{
+      // only count conflict if date is within our current days and project visible (findConflicts is global)
+      const inWindow = (new Date(c.dateISO) >= new Date(days[0]) && new Date(c.dateISO) <= new Date(days[days.length-1]));
+      if(!inWindow) return acc;
+      acc[c.name] = (acc[c.name]||0) + 1;
+      return acc;
+    }, {});
+
+    const overview = Array.from(map.entries()).map(([name,info])=>({
+      name, assignments: info.assignments, hours: info.hours, conflicts: conflictCount[name]||0
+    })).sort((a,b)=>b.hours - a.hours || a.name.localeCompare(b.name));
+
+    return { overview, days };
+  }
+
+  function showOverviewModal(){
+    const { overview, days } = buildEmployeeOverview();
+    const content = $('#overviewContent');
+    content.innerHTML = '';
+
+    const hdr = document.createElement('div');
+    hdr.className = 'small muted';
+    hdr.textContent = `Zeitraum: ${days[0]?.toLocaleDateString('de-AT') || '-'} – ${days[days.length-1]?.toLocaleDateString('de-AT') || '-'}`;
+    content.appendChild(hdr);
+
+    const tbl = document.createElement('table');
+    const thead = document.createElement('thead');
+    thead.innerHTML = `<tr><th>Name</th><th>Anzahl Einträge</th><th>Stunden</th><th>Konflikte (Tage)</th></tr>`;
+    tbl.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    overview.forEach(o=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${escapeHtml(o.name)}</td><td>${o.assignments}</td><td>${o.hours}</td><td>${o.conflicts}</td>`;
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    content.appendChild(tbl);
+
+    // open modal
+    const overlay = $('#overviewModal');
+    overlay.classList.add('open');
+    overlay.setAttribute('aria-hidden','false');
+    document.getElementById('closeOverview').focus();
+  }
+
+  // simple escape to avoid injection in table cells (names come from user input)
+  function escapeHtml(s){ return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;'); }
+
+  // handlers
+  $('#overviewBtn').onclick = showOverviewModal;
+  $('#closeOverview').onclick = ()=>{
+    const overlay = $('#overviewModal');
+    overlay.classList.remove('open');
+    overlay.setAttribute('aria-hidden','true');
+  };
+  // close by clicking outside the modal content
+  document.getElementById('overviewModal').addEventListener('click', (e)=>{
+    if(e.target === e.currentTarget){
+      e.currentTarget.classList.remove('open');
+      e.currentTarget.setAttribute('aria-hidden','true');
+    }
+  });
+
   // Init
   window.addEventListener('keydown', (e)=>{
-    if(e.key==='Escape'){ document.querySelectorAll('.menu.open').forEach(m=>m.classList.remove('open')); }
+    if(e.key==='Escape'){ document.querySelectorAll('.menu.open').forEach(m=>m.classList.remove('open')); const om = document.getElementById('overviewModal'); if(om) om.classList.remove('open'); }
     if(e.ctrlKey && e.key==='ArrowLeft'){ $('#prevWeek').click(); }
     if(e.ctrlKey && e.key==='ArrowRight'){ $('#nextWeek').click(); }
   });
