@@ -37,15 +37,32 @@
     .cell{cursor:pointer}
     .gcell-on{background:#263246}
 
-/* Farben pro Phase (wenn aktiv) */
-td[data-phase="MD"].gcell-on          { background: rgba(96,165,250,0.18); } /* blau */
-td[data-phase="ED"].gcell-on          { background: rgba(253,224,71,0.12); } /* gelb */
-td[data-phase="PUR"].gcell-on         { background: rgba(168,85,247,0.12); } /* violett */
-td[data-phase="SOW_OFF"].gcell-on     { background: rgba(16,185,129,0.12); } /* grün */
-td[data-phase="MA"].gcell-on          { background: rgba(249,115,22,0.12); } /* orange */
-td[data-phase="EA"].gcell-on          { background: rgba(14,165,233,0.12); } /* cyan */
-td[data-phase="SOW_ON"].gcell-on      { background: rgba(99,102,241,0.12); } /* indigo */
-td[data-phase="CUS"].gcell-on         { background: rgba(239,68,68,0.12); }  /* rot */
+/* Ersetze die bisherigen phase-Farben und td.gcell-trans durch diesen Block */
+td.gcell-trans {
+  /* sehr dezente Füllung (wird noch seltener verwendet) */
+  background-color: rgba(255,255,255,0.015);
+  border: 1px solid rgba(255,255,255,0.02);
+  background-image:
+    linear-gradient(135deg, rgba(255,255,255,0.01) 25%, transparent 25%),
+    linear-gradient(225deg, rgba(255,255,255,0.01) 25%, transparent 25%);
+  background-size: 8px 8px;
+}
+
+/* Generisches ON (für DEPT-Zellen ohne phase) */
+td.gcell-on {
+  background: rgba(100,115,140,0.16);
+  transition: background .12s ease;
+}
+
+/* Farben pro Phase (sichtbarer bei Aktivierung) */
+td[data-phase="MD"].gcell-on          { background: rgba(96,165,250,0.28); } /* blau */
+td[data-phase="ED"].gcell-on          { background: rgba(253,224,71,0.26); } /* gelb */
+td[data-phase="PUR"].gcell-on         { background: rgba(168,85,247,0.26); } /* violett */
+td[data-phase="SOW_OFF"].gcell-on     { background: rgba(16,185,129,0.26); } /* grün */
+td[data-phase="MA"].gcell-on          { background: rgba(249,115,22,0.26); } /* orange */
+td[data-phase="EA"].gcell-on          { background: rgba(14,165,233,0.26); } /* cyan */
+td[data-phase="SOW_ON"].gcell-on      { background: rgba(99,102,241,0.26); } /* indigo */
+td[data-phase="CUS"].gcell-on         { background: rgba(239,68,68,0.26); }  /* rot */
 
     /* Sunday highlight */
     .sunday{ background: var(--sunday-rose); }
@@ -98,23 +115,6 @@ td[data-phase="CUS"].gcell-on         { background: rgba(239,68,68,0.12); }  /* 
     .res-row{display:flex;align-items:center;gap:8px;justify-content:space-between}
     .res-controls{display:flex;gap:6px;align-items:center}
     .dept-select{padding:6px;border-radius:8px;background:#121417;color:var(--text);border:1px solid #2b2f38}
-
-    /* füge im <style> ein */
-    td.gcell-trans {
-      /* weiterhin "transparent" im Sinne von nicht voll gefüllt,
-         aber jetzt sichtbar: leichter Pattern + leichter Hintergrund */
-      background-image:
-        linear-gradient(135deg, rgba(255,255,255,0.02) 25%, transparent 25%),
-        linear-gradient(225deg, rgba(255,255,255,0.02) 25%, transparent 25%),
-        linear-gradient(45deg, rgba(255,255,255,0.02) 25%, transparent 25%),
-        linear-gradient(315deg, rgba(255,255,255,0.02) 25%, transparent 25%);
-      background-size: 8px 8px;
-      background-color: rgba(255,255,255,0.02);
-      border: 1px solid rgba(255,255,255,0.02);
-    }
-
-    /* leicht unterscheidbare sichtbare Farbfüllung (falls zusätzlich gewünscht) */
-    td.gcell-on { /* bestehende Regel bleibt, ggf anpassen */ }
 
     /* Übersicht Modal (großes GANTT zum Malen) */
     #ganttOverviewModal .modal { width: 95vw; max-width:1600px; max-height:90vh; }
@@ -417,6 +417,14 @@ const STORAGE_KEY = 'resplan_v3';
             td.classList.add('gcell-trans');
           } else {
             td.classList.remove('gcell-trans');
+          }
+
+          // markiert: zeige starke Farbe (phase-spezifisch)
+          if(p.data[key] === '#t'){
+            td.classList.add('gcell-on');
+          } else {
+            // nicht markiert: transparent / keine Füllung
+            td.classList.remove('gcell-on');
           }
 
           tr.appendChild(td);
@@ -908,7 +916,7 @@ const STORAGE_KEY = 'resplan_v3';
         tbody.appendChild(tr);
       });
 
-      // DEPT rows: mark week if irgendein Tag dieser Woche in Detailansicht belegt ist
+      // NEU: DEPT rows mit Stunden-Summen pro Woche
       DEPTS.forEach(dep=>{
         const tr = document.createElement('tr');
         const th = document.createElement('th'); th.className='sticky dept'; th.textContent = deptLabel(dep); tr.appendChild(th);
@@ -920,14 +928,25 @@ const STORAGE_KEY = 'resplan_v3';
             const d = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate()+i);
             return d.toISOString().slice(0,10);
           });
-          // if any day cell for this project+dep has names -> mark week
-          let marked = false;
+
+          // Summe der Stunden in dieser Woche für dieses Projekt + diese Abteilung
+          let totalHours = 0;
           daysOfWeek.forEach(dayISO=>{
             const key = `${dayISO}|D_${dep}`;
             const val = p.data[key] || '';
-            if(val && val.trim()) marked = true;
+            if(val && val.trim()){
+              const cnt = val.split(' | ').filter(Boolean).length;
+              totalHours += cnt * HOURS_PER_DAY;
+            }
           });
-          if(marked) td.classList.add('gcell-trans'); else td.classList.remove('gcell-trans');
+
+          if(totalHours > 0){
+            td.textContent = `${totalHours} h`;
+            td.classList.add('gcell-on'); // sichtbare Hervorhebung
+          } else {
+            td.textContent = '';
+            td.classList.remove('gcell-on');
+          }
           tr.appendChild(td);
         });
 
