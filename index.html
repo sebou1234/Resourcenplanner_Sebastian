@@ -82,6 +82,17 @@
       </label>
       <button id="prevWeek">◀ Woche</button>
       <button id="nextWeek">Woche ▶</button>
+
+      <!-- Zeitspanne Umschalter -->
+      <label for="spanSelect">Zeitraum:
+        <select id="spanSelect" title="Zeige 2 / 4 / 8 / 16 Wochen">
+          <option value="2">2 Wochen</option>
+          <option value="4">4 Wochen</option>
+          <option value="8">8 Wochen</option>
+          <option value="16">16 Wochen</option>
+        </select>
+      </label>
+
       <button id="overviewBtn">Mitarbeiter‑Übersicht</button>
       <button id="exportBtn">Export JSON</button>
       <input type="file" id="importFile" style="display:none" accept="application/json"/>
@@ -163,7 +174,7 @@
     resources:[ 'Mitarbeiter 1','Mitarbeiter 2','Mitarbeiter 3' ],
     projects:[ { id:crypto.randomUUID(), name:'Projekt 1', visible:true, data:{} },
                { id:crypto.randomUUID(), name:'Projekt 2', visible:true, data:{} } ],
-    ui:{ start: normStart(new Date().toISOString().slice(0,10)) }
+    ui:{ start: normStart(new Date().toISOString().slice(0,10)), weeks: 2 }
   };
 
   function normStart(dateStr){
@@ -176,25 +187,34 @@
   function load(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)); }catch(e){ return null; } }
 
   const startDateInput=$('#startDate');
+  const spanSelect = document.getElementById('spanSelect');
 
   function init(){
+    // ensure weeks default exists for older saved states
+    if(!state.ui) state.ui = { start: normStart(new Date().toISOString().slice(0,10)), weeks: 2 };
+    if(typeof state.ui.weeks === 'undefined') state.ui.weeks = 2;
+
     // Filters UI
     buildProjectFilters();
     // Start range
     state.ui.start=normStart(state.ui.start); startDateInput.value=state.ui.start;
+    // Span select
+    spanSelect.value = String(state.ui.weeks);
+    spanSelect.onchange = (e)=>{ const w = parseInt(e.target.value,10)||2; state.ui.weeks = w; save(); };
     render();
   }
 
   function rangeDays(){
     const start=new Date(state.ui.start);
-    const days=[...Array(14)].map((_,i)=> new Date(start.getFullYear(),start.getMonth(),start.getDate()+i));
+    const totalDays = (state.ui.weeks || 2) * 7;
+    const days=[...Array(totalDays)].map((_,i)=> new Date(start.getFullYear(),start.getMonth(),start.getDate()+i));
     return days.filter(d=>d>=START_MIN && d<=END_MAX);
   }
 
   function render(){
     const days=rangeDays();
     $('#rangeLabel').textContent = days.length? `${days[0].toLocaleDateString('de-AT')} – ${days[days.length-1].toLocaleDateString('de-AT')}` : '';
-    $('#stats').textContent = `${state.resources.length} Personen • ${state.projects.length} Projekt(e)`;
+    $('#stats').textContent = `${state.resources.length} Personen • ${state.projects.length} Projekt(e) • ${state.ui.weeks} Wochen`;
 
     const grid=$('#grid'); grid.innerHTML='';
     // header
