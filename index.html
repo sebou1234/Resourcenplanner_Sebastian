@@ -73,6 +73,27 @@ td[data-phase="CUS"].gcell-on         { background: rgba(239,68,68,0.12); }  /* 
     .modal .project-cell{font-size:13px;color:var(--text)}
     .modal .empty{color:#9aa3b6;font-style:italic}
 
+    /* Multi‑select menu (Dropdown) */
+    .menu{
+      position:fixed; /* use viewport coords from getBoundingClientRect */
+      display:none;
+      background:var(--card);
+      border:1px solid #222;
+      border-radius:10px;
+      padding:10px;
+      z-index:120;
+      min-width:260px;
+      max-width:min(60vw,420px);
+      max-height:60vh;
+      overflow:auto;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.6);
+    }
+    .menu.open{ display:block; }
+    .menu input[type="search"]{ width:100%; padding:6px; margin-bottom:8px; border-radius:6px; border:1px solid #2b2f38; background:#0b0c10; color:var(--text) }
+    .menu .item{ display:flex; align-items:center; gap:8px; padding:6px 4px; cursor:pointer; white-space:nowrap }
+    .menu .item input{ margin-right:6px }
+    .menu button{ display:block; width:100%; margin-bottom:8px }
+
     /* Resource list controls */
     .res-row{display:flex;align-items:center;gap:8px;justify-content:space-between}
     .res-controls{display:flex;gap:6px;align-items:center}
@@ -313,6 +334,7 @@ const STORAGE_KEY = 'resplan_v3';
         rangeWeeks().forEach(weekStart=>{
           const td = document.createElement('td');
           td.className = 'gantt-cell ganttRow';
+          td.style.background = 'transparent'; // nicht angeklickte Zellen normale Farbe
           // mark sunday visually on the week's sunday
           const sunday = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate()+6);
           if(sunday.getDay()===0) td.classList.add('sunday');
