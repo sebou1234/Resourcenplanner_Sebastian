@@ -322,11 +322,14 @@ const STORAGE_KEY = 'resplan_v3';
           // expose phase on the cell for CSS
           td.dataset.phase = phase.key;
 
+          // make the GANTT cell cover a whole week (7 days)
+          td.colSpan = 7;
+          td.style.cursor = 'pointer';
+
           if(p.data[key] === '#g') td.classList.add('gcell-on');
 
           // click toggles this cell
           td.addEventListener('click', (e)=>{
-            // normal click toggles single cell
             const setOn = !(p.data[key] === '#g');
             p.data[key] = setOn ? '#g' : '';
             if(setOn) td.classList.add('gcell-on'); else td.classList.remove('gcell-on');
@@ -345,6 +348,7 @@ const STORAGE_KEY = 'resplan_v3';
             if(setOn) td.classList.add('gcell-on'); else td.classList.remove('gcell-on');
           });
 
+          // mouseenter still works for painting across week cells
           td.addEventListener('mouseenter', ()=>{
             if(isGanttDrawing && ganttDrawPhase === phase.key && ganttDrawProjectId === p.id){
               p.data[key] = ganttDrawValue ? '#g' : '';
