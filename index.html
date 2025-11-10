@@ -185,6 +185,10 @@ let ganttDrawValue = null;
 let ganttDrawPhase = null;
 let ganttDrawProjectId = null;
 
+// <-- Fehlende Konstanten ergänzt (wichtig) -->
+const HOURS_PER_DAY = 10;
+const STORAGE_KEY = 'resplan_v3';
+
   // Load / init state (with migration)
   const raw = load() || {};
   const state = raw || {};
@@ -479,7 +483,7 @@ let ganttDrawProjectId = null;
 
   function getCellAssignments(project, dayISO, dep){ const key = `${dayISO}|D_${dep}`; const s = project.data[key] || ''; return s ? s.split(' | ').filter(Boolean) : []; }
 
-  // ===== Resource management (list, add, rename, change dept, delete) =====
+  // ===== Resource management (list, add, rename, change dept, delete) ======
   function renderResources(){
     const box = $('#resList'); box.innerHTML = '';
     state.resources.forEach((res, i) => {
