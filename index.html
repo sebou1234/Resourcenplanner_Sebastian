@@ -192,6 +192,10 @@
   const HOURS_PER_DAY = 10;
   const STORAGE_KEY = 'resplan_v3';
 
+  // --- NEW: GANTT drawing state ---
+  let isGanttDrawing = false;
+  let ganttDrawValue = null;
+
   // Load / init state (with migration)
   const raw = load() || {};
   const state = raw || {};
@@ -289,7 +293,61 @@
 
     const tbody = document.createElement('tbody');
 
-    // Visible projects stacked
+    // --- NEW: Top GANTT chart (one row per sichtbares Projekt, weekly cells) ---
+    const visibleProjects = state.projects.filter(p=>p.visible!==false);
+    if(visibleProjects.length){
+      visibleProjects.forEach(p=>{
+        const tr = document.createElement('tr');
+        const th = document.createElement('th');
+        th.className = 'sticky dept ganttHead';
+        th.textContent = p.name;
+        tr.appendChild(th);
+
+        rangeWeeks().forEach(weekStart=>{
+          const td = document.createElement('td');
+          td.className = 'gantt-cell ganttRow';
+          // sunday highlight for the week's sunday
+          const sunday = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate()+6);
+          if(sunday.getDay()===0) td.classList.add('sunday');
+
+          const weekISO = weekStart.toISOString().slice(0,10);
+          const key = `${weekISO}|W_${p.id}`;
+          if(p.data[key] === '#g') td.classList.add('gcell-on');
+
+          // drawing interactions: mousedown starts draw, mouseenter paints, mouseup ends
+          td.addEventListener('mousedown', (e)=>{
+            e.preventDefault();
+            isGanttDrawing = true;
+            const setOn = !(p.data[key] === '#g');
+            ganttDrawValue = setOn;
+            // apply immediately
+            p.data[key] = setOn ? '#g' : '';
+            if(setOn) td.classList.add('gcell-on'); else td.classList.remove('gcell-on');
+          });
+          td.addEventListener('mouseenter', (e)=>{
+            if(isGanttDrawing){
+              p.data[key] = ganttDrawValue ? '#g' : '';
+              if(ganttDrawValue) td.classList.add('gcell-on'); else td.classList.remove('gcell-on');
+            }
+          });
+          td.addEventListener('mouseup', ()=>{
+            if(isGanttDrawing){ isGanttDrawing = false; save(); }
+          });
+
+          tr.appendChild(td);
+        });
+
+        tbody.appendChild(tr);
+      });
+
+      // small visual gap after GANTT area
+      const gap = document.createElement('tr'); gap.className='project-gap-row';
+      const gapTd = document.createElement('td'); gapTd.colSpan = rangeWeeks().length + 1;
+      gap.appendChild(gapTd);
+      tbody.appendChild(gap);
+    }
+
+    // Visible projects stacked (rest of project UI: header, department rows, sum, gap)
     state.projects.filter(p=>p.visible!==false).forEach((p,pi)=>{
       // project header row
       const pr = document.createElement('tr');
@@ -304,43 +362,6 @@
         pr.appendChild(td);
       });
       tbody.appendChild(pr);
-
-      // GANTT rows (weekly cells) — show dept label only (no 'GANTT' word)
-      rangeWeeks().forEach((weekStart, wIdx)=>{
-        GANTT.forEach(g=>{
-          // single row per gantt entry (we'll render weekly cells as one cell per week)
-          // but to keep ordering like before, create per GANTT a row iterating weeks — we will produce one overall row per GANTT, with week cells appended
-        });
-      });
-      // Instead render each GANTT as its own row with weekly cells:
-      GANTT.forEach(g=>{
-        const tr = document.createElement('tr');
-        const th = document.createElement('th');
-        th.className='sticky dept ganttHead';
-        th.textContent = g.dept; // only dept code
-        tr.appendChild(th);
-
-        // for visual distinction between gantt and employee rows
-        rangeWeeks().forEach(weekStart=>{
-          const td = document.createElement('td');
-          td.className = 'gantt-cell ganttRow';
-          // mark sunday style for the week's sunday column: find the sunday of the week
-          const sunday = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate()+6);
-          if(sunday.getDay()===0) td.classList.add('sunday');
-
-          const weekISO = weekStart.toISOString().slice(0,10);
-          const key = `${weekISO}|W_${g.key}`;
-          const val = p.data[key] || '';
-          if(val === '#g') td.classList.add('gcell-on');
-
-          td.addEventListener('click', ()=> {
-            p.data[key] = (p.data[key] === '#g') ? '' : '#g';
-            save();
-          });
-          tr.appendChild(td);
-        });
-        tbody.appendChild(tr);
-      });
 
       // Department rows (MD..PM) — day‑level with multi-select
       DEPTS.forEach(dep=>{
@@ -701,6 +722,14 @@
     if(e.ctrlKey && e.key === 'ArrowRight'){ $('#nextWeek').click(); }
   });
 
+  // --- NEW: ensure drawing stops on global mouseup and persist changes ---
+  document.addEventListener('mouseup', ()=>{
+    if(isGanttDrawing){
+      isGanttDrawing = false;
+      ganttDrawValue = null;
+      save();
+    }
+  });
   // Helpers
   function fmtCW(d){ const dow = d.toLocaleDateString('de-AT',{weekday:'short'}).slice(0,2).toUpperCase(); const w = getISOWeek(d); return `${dow} CW${String(w).padStart(2,'0')}`; }
   function getISOWeek(date){ const d = new Date(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate())); const dayNum = d.getUTCDay()||7; d.setUTCDate(d.getUTCDate()+4-dayNum); const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1)); return Math.ceil((((d-yearStart)/86400000)+1)/7); }
