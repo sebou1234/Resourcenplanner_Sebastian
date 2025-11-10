@@ -36,29 +36,16 @@
     .dept{min-width:260px}
     .cell{cursor:pointer}
     .gcell-on{background:#263246}
-    .ganttRow{background:var(--gantt-bg)}
-    .ganttHead{background:var(--gantt-head);font-weight:700}
-    .sum{background:#1a1e26;color:#c9d6ea;font-weight:600}
-    .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-    .pill{border-radius:999px;padding:6px 10px;background:#1c2330;border:1px solid #2b3342}
-    .pill strong{color:#c9d6ea}
-    .danger{color:#fff;background:rgba(255,107,107,.15);border-color:#ff6b6b}
-    .ok{color:#cffff1;background:rgba(46,204,113,.15);border-color:#2ecc71}
-    .muted{color:#b9c1d1}
-    .menu{position:absolute;top:100%;left:0;min-width:240px;max-height:260px;overflow:auto;background:#0f131a;border:1px solid #2b2f38;border-radius:10px;padding:8px;display:none;z-index:20}
-    .menu.open{display:block}
-    .menu input[type="search"]{width:100%;margin-bottom:6px}
-    .item{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
-    .item:hover{background:#1a2230}
-    .item input{accent-color:#5ccfe6}
-    .conflict{color:#fff;background:#301a1c;border:1px solid #56292d;border-radius:10px;padding:8px 10px}
-    .small{font-size:12px;color:#aab3c5}
-    .foot{margin-top:6px;display:flex;gap:8px;justify-content:flex-end}
-    .link{color:var(--acc);text-decoration:none}
-    .projHeader{background:#10141c;font-weight:700}
-    .filters{display:flex;flex-wrap:wrap; gap:8px; max-height:160px; overflow:auto; padding:8px; background:#0f131a; border:1px solid #2b2f38; border-radius:12px}
-    .filters label{display:flex;align-items:center;gap:6px;background:#171c26;border:1px solid #2b2f38;padding:4px 8px;border-radius:999px}
-    .filters button{padding:6px 8px}
+
+/* Farben pro Phase (wenn aktiv) */
+td[data-phase="MD"].gcell-on          { background: rgba(96,165,250,0.18); } /* blau */
+td[data-phase="ED"].gcell-on          { background: rgba(253,224,71,0.12); } /* gelb */
+td[data-phase="PUR"].gcell-on         { background: rgba(168,85,247,0.12); } /* violett */
+td[data-phase="SOW_OFF"].gcell-on     { background: rgba(16,185,129,0.12); } /* grün */
+td[data-phase="MA"].gcell-on          { background: rgba(249,115,22,0.12); } /* orange */
+td[data-phase="EA"].gcell-on          { background: rgba(14,165,233,0.12); } /* cyan */
+td[data-phase="SOW_ON"].gcell-on      { background: rgba(99,102,241,0.12); } /* indigo */
+td[data-phase="CUS"].gcell-on         { background: rgba(239,68,68,0.12); }  /* rot */
 
     /* Sunday highlight */
     .sunday{ background: var(--sunday-rose); }
@@ -179,22 +166,24 @@
   const $ = sel => document.querySelector(sel);
   const $$ = sel => Array.from(document.querySelectorAll(sel));
   const DEPTS = ['MD','ED','SOW','MA','EA','PM'];
-  const GANTT = [
-    { key: 'G1', dept: 'MD' },
-    { key: 'G2', dept: 'ED' },
-    { key: 'G3', dept: 'PUR' },
-    { key: 'G4', dept: 'SOW' },
-    { key: 'G5', dept: 'MA' },
-    { key: 'G6', dept: 'EA' },
-    { key: 'G7', dept: 'SOW2' },
-    { key: 'G8', dept: 'CUS' }
-  ];
-  const HOURS_PER_DAY = 10;
-  const STORAGE_KEY = 'resplan_v3';
 
-  // --- NEW: GANTT drawing state ---
-  let isGanttDrawing = false;
-  let ganttDrawValue = null;
+// Phasen: eine Zeile je Phase pro Projekt (wie gewünscht)
+const PHASES = [
+  { key: 'MD',       label: 'MD' },
+  { key: 'ED',       label: 'ED' },
+  { key: 'PUR',      label: 'PUR' },
+  { key: 'SOW_OFF',  label: 'SOW Offline' },
+  { key: 'MA',       label: 'MA' },
+  { key: 'EA',       label: 'EA' },
+  { key: 'SOW_ON',   label: 'SOW Online' },
+  { key: 'CUS',      label: 'Customer' },
+];
+
+// Drawing state for paint-mode
+let isGanttDrawing = false;
+let ganttDrawValue = null;
+let ganttDrawPhase = null;
+let ganttDrawProjectId = null;
 
   // Load / init state (with migration)
   const raw = load() || {};
@@ -293,63 +282,9 @@
 
     const tbody = document.createElement('tbody');
 
-    // --- NEW: Top GANTT chart (one row per sichtbares Projekt, weekly cells) ---
-    const visibleProjects = state.projects.filter(p=>p.visible!==false);
-    if(visibleProjects.length){
-      visibleProjects.forEach(p=>{
-        const tr = document.createElement('tr');
-        const th = document.createElement('th');
-        th.className = 'sticky dept ganttHead';
-        th.textContent = p.name;
-        tr.appendChild(th);
-
-        rangeWeeks().forEach(weekStart=>{
-          const td = document.createElement('td');
-          td.className = 'gantt-cell ganttRow';
-          // sunday highlight for the week's sunday
-          const sunday = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate()+6);
-          if(sunday.getDay()===0) td.classList.add('sunday');
-
-          const weekISO = weekStart.toISOString().slice(0,10);
-          const key = `${weekISO}|W_${p.id}`;
-          if(p.data[key] === '#g') td.classList.add('gcell-on');
-
-          // drawing interactions: mousedown starts draw, mouseenter paints, mouseup ends
-          td.addEventListener('mousedown', (e)=>{
-            e.preventDefault();
-            isGanttDrawing = true;
-            const setOn = !(p.data[key] === '#g');
-            ganttDrawValue = setOn;
-            // apply immediately
-            p.data[key] = setOn ? '#g' : '';
-            if(setOn) td.classList.add('gcell-on'); else td.classList.remove('gcell-on');
-          });
-          td.addEventListener('mouseenter', (e)=>{
-            if(isGanttDrawing){
-              p.data[key] = ganttDrawValue ? '#g' : '';
-              if(ganttDrawValue) td.classList.add('gcell-on'); else td.classList.remove('gcell-on');
-            }
-          });
-          td.addEventListener('mouseup', ()=>{
-            if(isGanttDrawing){ isGanttDrawing = false; save(); }
-          });
-
-          tr.appendChild(td);
-        });
-
-        tbody.appendChild(tr);
-      });
-
-      // small visual gap after GANTT area
-      const gap = document.createElement('tr'); gap.className='project-gap-row';
-      const gapTd = document.createElement('td'); gapTd.colSpan = rangeWeeks().length + 1;
-      gap.appendChild(gapTd);
-      tbody.appendChild(gap);
-    }
-
-    // Visible projects stacked (rest of project UI: header, department rows, sum, gap)
-    state.projects.filter(p=>p.visible!==false).forEach((p,pi)=>{
-      // project header row
+    // Für jedes sichtbare Projekt: Header, dann GANTT-Phasen (je Phase eine Zeile, Wochen-Zellen)
+    state.projects.filter(p=>p.visible!==false).forEach((p)=>{
+      // project header row (wie vorher)
       const pr = document.createElement('tr');
       const cell = document.createElement('th');
       cell.className='sticky dept projHeader';
@@ -363,7 +298,63 @@
       });
       tbody.appendChild(pr);
 
-      // Department rows (MD..PM) — day‑level with multi-select
+      // GANTT: eine Zeile pro PHASE, jede Zelle = eine Woche (click toggles)
+      PHASES.forEach(phase=>{
+        const tr = document.createElement('tr');
+        const th = document.createElement('th');
+        th.className = 'sticky dept ganttHead';
+        th.textContent = phase.label;
+        tr.appendChild(th);
+
+        rangeWeeks().forEach(weekStart=>{
+          const td = document.createElement('td');
+          td.className = 'gantt-cell ganttRow';
+          // mark sunday visually on the week's sunday
+          const sunday = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate()+6);
+          if(sunday.getDay()===0) td.classList.add('sunday');
+
+          const weekISO = weekStart.toISOString().slice(0,10);
+          const key = `${weekISO}|W_${p.id}_${phase.key}`; // unique per project+phase+week
+          // expose phase on the cell for CSS
+          td.dataset.phase = phase.key;
+
+          if(p.data[key] === '#g') td.classList.add('gcell-on');
+
+          // click toggles this cell
+          td.addEventListener('click', (e)=>{
+            // normal click toggles single cell
+            const setOn = !(p.data[key] === '#g');
+            p.data[key] = setOn ? '#g' : '';
+            if(setOn) td.classList.add('gcell-on'); else td.classList.remove('gcell-on');
+            save();
+          });
+
+          // mousedown+drag painting (only within same project+phase)
+          td.addEventListener('mousedown', (e)=>{
+            e.preventDefault();
+            isGanttDrawing = true;
+            ganttDrawPhase = phase.key;
+            ganttDrawProjectId = p.id;
+            const setOn = !(p.data[key] === '#g'); // decide paint mode by initial cell
+            ganttDrawValue = setOn;
+            p.data[key] = setOn ? '#g' : '';
+            if(setOn) td.classList.add('gcell-on'); else td.classList.remove('gcell-on');
+          });
+
+          td.addEventListener('mouseenter', ()=>{
+            if(isGanttDrawing && ganttDrawPhase === phase.key && ganttDrawProjectId === p.id){
+              p.data[key] = ganttDrawValue ? '#g' : '';
+              if(ganttDrawValue) td.classList.add('gcell-on'); else td.classList.remove('gcell-on');
+            }
+          });
+
+          tr.appendChild(td);
+        });
+
+        tbody.appendChild(tr);
+      });
+
+      // danach weiterhin die tagebasierten DEPTS rows wie gehabt
       DEPTS.forEach(dep=>{
         const tr = document.createElement('tr');
         const th = document.createElement('th');
@@ -378,7 +369,6 @@
           const key = `${dayISO}|D_${dep}`;
           td.textContent = p.data[key] || '';
           td.addEventListener('click', ()=> openMulti(td, dayISO, dep, p));
-          // double-click immediate clear
           td.addEventListener('dblclick', ()=>{
             if(!p.data[key]) return;
             if(confirm(`Alle Mitarbeitenden am ${new Date(dayISO).toLocaleDateString('de-AT')} für Projekt "${p.name}" entfernen?`)){
@@ -402,7 +392,7 @@
       });
       tbody.appendChild(sr);
 
-      // project gap row for clearer separation
+      // project gap row
       const gap = document.createElement('tr'); gap.className='project-gap-row';
       const gapTd = document.createElement('td'); gapTd.colSpan = days.length + 1;
       gap.appendChild(gapTd);
@@ -724,12 +714,14 @@
 
   // --- NEW: ensure drawing stops on global mouseup and persist changes ---
   document.addEventListener('mouseup', ()=>{
-    if(isGanttDrawing){
-      isGanttDrawing = false;
-      ganttDrawValue = null;
-      save();
-    }
-  });
+  if(isGanttDrawing){
+    isGanttDrawing = false;
+    ganttDrawValue = null;
+    ganttDrawPhase = null;
+    ganttDrawProjectId = null;
+    save(); // persist painting
+  }
+});
   // Helpers
   function fmtCW(d){ const dow = d.toLocaleDateString('de-AT',{weekday:'short'}).slice(0,2).toUpperCase(); const w = getISOWeek(d); return `${dow} CW${String(w).padStart(2,'0')}`; }
   function getISOWeek(date){ const d = new Date(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate())); const dayNum = d.getUTCDay()||7; d.setUTCDate(d.getUTCDate()+4-dayNum); const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1)); return Math.ceil((((d-yearStart)/86400000)+1)/7); }
