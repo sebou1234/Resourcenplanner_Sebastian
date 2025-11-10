@@ -2,11 +2,16 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Ressourcenplaner – Lokal (Single‑User)</title>
   <style>
     :root{
       --bg:#0b0c10; --card:#16181d; --muted:#22252c; --text:#eef2f7; --sub:#b9c1d1; --acc:#61dafb; --ok:#2ecc71; --warn:#ffb347; --bad:#ff6b6b;
+      --sunday-rose: rgba(255,99,71,0.08);
+      --sunday-rose-strong: rgba(255,99,71,0.12);
+      --gantt-bg: #0e1620;
+      --gantt-head: #0b1420;
+      --project-gap: 10px;
     }
     html,body{height:100%; background:var(--bg); color:var(--text); font:14px/1.4 system-ui,Segoe UI,Roboto,Arial,sans-serif;margin:0}
     *{box-sizing:border-box}
@@ -21,15 +26,18 @@
     h2{font-size:13px;margin:14px 0 6px;color:var(--sub);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
     .list{display:flex;flex-direction:column;gap:8px}
     .row{display:flex;align-items:center;gap:8px}
-    .tag{background:#2b2f38;border:1px solid #39404d;border-radius:999px;padding:2px 8px;color:#c6d1e6;font-size:12px}
+    .tag{background:#2b2f38;border:1px solid #39404d;border-radius:999px;padding:4px 8px;color:#c6d1e6;font-size:12px;min-width:140px;display:inline-block}
+    .tag .dept{font-weight:600;margin-left:8px;color:var(--sub);font-size:11px}
     .card{background:var(--card);border:1px solid #222;border-radius:14px;padding:12px}
     .grid{border-collapse:separate;border-spacing:0}
     .grid th,.grid td{border:1px solid #2b2f38;padding:6px 8px;vertical-align:middle}
     .sticky{position:sticky;left:0;background:var(--card);z-index:5}
     .head-sticky{position:sticky;top:0;background:var(--card);z-index:6}
     .dept{min-width:260px}
-    .cell{min-width:98px; cursor:pointer}
+    .cell{cursor:pointer}
     .gcell-on{background:#263246}
+    .ganttRow{background:var(--gantt-bg)}
+    .ganttHead{background:var(--gantt-head);font-weight:700}
     .sum{background:#1a1e26;color:#c9d6ea;font-weight:600}
     .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
     .pill{border-radius:999px;padding:6px 10px;background:#1c2330;border:1px solid #2b3342}
@@ -43,26 +51,33 @@
     .item{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
     .item:hover{background:#1a2230}
     .item input{accent-color:#5ccfe6}
-
     .conflict{color:#fff;background:#301a1c;border:1px solid #56292d;border-radius:10px;padding:8px 10px}
     .small{font-size:12px;color:#aab3c5}
     .foot{margin-top:6px;display:flex;gap:8px;justify-content:flex-end}
     .link{color:var(--acc);text-decoration:none}
-
     .projHeader{background:#10141c;font-weight:700}
     .filters{display:flex;flex-wrap:wrap; gap:8px; max-height:160px; overflow:auto; padding:8px; background:#0f131a; border:1px solid #2b2f38; border-radius:12px}
     .filters label{display:flex;align-items:center;gap:6px;background:#171c26;border:1px solid #2b2f38;padding:4px 8px;border-radius:999px}
     .filters button{padding:6px 8px}
-    /* Modal from previous version kept out to simplify */
 
-    /* ===== Sonntag Hervorhebung ===== */
-    .sunday{ background: rgba(255,99,71,0.08); } /* helles Rot‑Tönung für Sonntage */
-    .head-sticky.sunday{ background: rgba(255,99,71,0.12); } /* etwas kräftiger für Kopfzeile */
+    /* Sunday highlight */
+    .sunday{ background: var(--sunday-rose); }
+    .head-sticky.sunday{ background: var(--sunday-rose-strong); }
 
-    /* ===== Mitarbeiterübersicht Modal ===== */
+    /* Scaling for span choices (adjust min-width) */
+    body.span-2 .grid th, body.span-2 .grid td { min-width:98px; }
+    body.span-4 .grid th, body.span-4 .grid td { min-width:70px; }
+    body.span-8 .grid th, body.span-8 .grid td { min-width:52px; }
+    body.span-16 .grid th, body.span-16 .grid td { min-width:40px; }
+
+    /* Gantt specific */
+    .gantt-cell{height:36px}
+    .project-gap-row td{border:none;height:var(--project-gap);background:transparent}
+
+    /* Modal */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;z-index:50}
     .modal-overlay.open{display:flex}
-    .modal{background:var(--card);border:1px solid #222;border-radius:12px;padding:16px;min-width:360px;max-width:90%;max-height:80%;overflow:auto;color:var(--text)}
+    .modal{background:var(--card);border:1px solid #222;border-radius:12px;padding:16px;min-width:360px;max-width:95%;max-height:90%;overflow:auto;color:var(--text)}
     .modal h3{margin:0;font-size:15px}
     .modal .modal-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
     .modal table{width:100%;border-collapse:collapse;margin-top:6px;white-space:nowrap}
@@ -70,6 +85,11 @@
     .modal .close{margin-left:auto;padding:6px 8px}
     .modal .project-cell{font-size:13px;color:var(--text)}
     .modal .empty{color:#9aa3b6;font-style:italic}
+
+    /* Resource list controls */
+    .res-row{display:flex;align-items:center;gap:8px;justify-content:space-between}
+    .res-controls{display:flex;gap:6px;align-items:center}
+    .dept-select{padding:6px;border-radius:8px;background:#121417;color:var(--text);border:1px solid #2b2f38}
   </style>
 </head>
 <body>
@@ -113,7 +133,10 @@
 
       <h2 style="margin-top:16px">Mitarbeiter</h2>
       <div class="row">
-        <input id="newRes" placeholder="Name hinzufügen…"/>
+        <input id="newRes" placeholder="Name hinzufügen…" />
+        <select id="newResDept" class="dept-select" title="Abteilung">
+          <option>MD</option><option>ED</option><option>SOW</option><option>MA</option><option>EA</option><option>PM</option>
+        </select>
         <button id="addResBtn">Hinzufügen</button>
       </div>
       <div id="resList" class="list" style="margin-top:8px"></div>
@@ -132,7 +155,7 @@
         <div style="overflow:auto">
           <table class="grid" id="grid"></table>
         </div>
-        <div class="foot small">Tipp: In Gantt‑Zeilen Zellen anklicken, um einzelne Zellen zu markieren. In Abteilungszeilen klick → Mitarbeitende auswählen (Mehrfachauswahl). 10 h/Tag pro Person. Trenner „ | “.</div>
+        <div class="foot small">Tipp: Doppel‑Klick auf eine Abteilungs‑Zelle löscht alle Mitarbeitereinträge (mit Bestätigung). In Abteilungs‑Zellen Klick → Mitarbeitende auswählen (Mehrfachauswahl). 10 h/Tag pro Person. Trenner „ | “.</div>
       </div>
     </main>
   </div>
@@ -152,131 +175,217 @@
   </div>
 
   <script>
-  // ====== Utility ======
-  const $=sel=>document.querySelector(sel); const $$=sel=>Array.from(document.querySelectorAll(sel));
-  const fmtCW = (d)=>{ const dow=d.toLocaleDateString('de-AT',{weekday:'short'}).slice(0,2).toUpperCase(); const w=getISOWeek(d); return `${dow} CW${String(w).padStart(2,'0')}`; };
-  function getISOWeek(date){ const d=new Date(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate())); const dayNum=d.getUTCDay()||7; d.setUTCDate(d.getUTCDate()+4-dayNum); const yearStart=new Date(Date.UTC(d.getUTCFullYear(),0,1)); return Math.ceil((((d-yearStart)/86400000)+1)/7); }
-  const STORAGE_KEY='resplan_v3';
-  const START_MIN=new Date('2025-01-01'); const END_MAX=new Date('2026-12-31');
-  const HOURS_PER_DAY=10; const DEPTS=['MD','ED','SOW','MA','EA','PM'];
-  const GANTT=[
-    {key:'G1', label:'Gantt 1 – MD'},
-    {key:'G2', label:'Gantt 2 – ED'},
-    {key:'G3', label:'Gantt 3 – PUR'},
-    {key:'G4', label:'Gantt 4 – SOW Offline'},
-    {key:'G5', label:'Gantt 5 – MA'},
-    {key:'G6', label:'Gantt 6 – EA'},
-    {key:'G7', label:'Gantt 7 – SOW'},
-    {key:'G8', label:'Gantt 8 – Customer'}
+  // ====== Utility & constants ======
+  const $ = sel => document.querySelector(sel);
+  const $$ = sel => Array.from(document.querySelectorAll(sel));
+  const DEPTS = ['MD','ED','SOW','MA','EA','PM'];
+  const GANTT = [
+    { key: 'G1', dept: 'MD' },
+    { key: 'G2', dept: 'ED' },
+    { key: 'G3', dept: 'PUR' },
+    { key: 'G4', dept: 'SOW' },
+    { key: 'G5', dept: 'MA' },
+    { key: 'G6', dept: 'EA' },
+    { key: 'G7', dept: 'SOW2' },
+    { key: 'G8', dept: 'CUS' }
   ];
+  const HOURS_PER_DAY = 10;
+  const STORAGE_KEY = 'resplan_v3';
 
-  const state = load() || {
-    resources:[ 'Mitarbeiter 1','Mitarbeiter 2','Mitarbeiter 3' ],
-    projects:[ { id:crypto.randomUUID(), name:'Projekt 1', visible:true, data:{} },
-               { id:crypto.randomUUID(), name:'Projekt 2', visible:true, data:{} } ],
-    ui:{ start: normStart(new Date().toISOString().slice(0,10)), weeks: 2 }
-  };
+  // Load / init state (with migration)
+  const raw = load() || {};
+  const state = raw || {};
+  if(!state.resources) state.resources = ['Mitarbeiter 1','Mitarbeiter 2','Mitarbeiter 3'];
+  if(!state.projects) state.projects = [{ id: crypto.randomUUID(), name: 'Projekt 1', visible: true, data: {} }, { id: crypto.randomUUID(), name: 'Projekt 2', visible: true, data: {} }];
+  if(!state.ui) state.ui = { start: normStart(new Date().toISOString().slice(0,10)), weeks: 2 };
+
+  // Migrate resources: strings -> objects {name,dept}
+  state.resources = state.resources.map(r => {
+    if(typeof r === 'string') return { name: r, dept: 'MD' };
+    // already object
+    return { name: r.name || 'Unnamed', dept: r.dept || 'MD' };
+  });
 
   function normStart(dateStr){
-    let d=new Date(dateStr||START_MIN); if(d<START_MIN) d=new Date(START_MIN); if(d>END_MAX) d=new Date(END_MAX);
-    const day=d.getDay(); const diff=(day===0? -6 : 1-day); d.setDate(d.getDate()+diff); // Monday
+    let d = new Date(dateStr||new Date());
+    const START_MIN = new Date('2025-01-01');
+    const END_MAX = new Date('2026-12-31');
+    if(d < START_MIN) d = START_MIN;
+    if(d > END_MAX) d = END_MAX;
+    const day = d.getDay();
+    const diff = (day === 0 ? -6 : 1 - day);
+    d.setDate(d.getDate() + diff); // Monday
     return d.toISOString().slice(0,10);
   }
 
   function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); render(); }
   function load(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)); }catch(e){ return null; } }
 
-  const startDateInput=$('#startDate');
+  // Elements
+  const startDateInput = $('#startDate');
   const spanSelect = document.getElementById('spanSelect');
 
+  // Init
   function init(){
-    // ensure weeks default exists for older saved states
     if(!state.ui) state.ui = { start: normStart(new Date().toISOString().slice(0,10)), weeks: 2 };
     if(typeof state.ui.weeks === 'undefined') state.ui.weeks = 2;
-
-    // Filters UI
-    buildProjectFilters();
-    // Start range
-    state.ui.start=normStart(state.ui.start); startDateInput.value=state.ui.start;
-    // Span select
+    state.ui.start = normStart(state.ui.start);
+    startDateInput.value = state.ui.start;
     spanSelect.value = String(state.ui.weeks);
-    spanSelect.onchange = (e)=>{ const w = parseInt(e.target.value,10)||2; state.ui.weeks = w; save(); };
+    spanSelect.onchange = (e)=>{ state.ui.weeks = parseInt(e.target.value,10) || 2; applySpanClass(); save(); };
+
+    buildProjectFilters();
     render();
+    applySpanClass();
   }
 
+  // apply body class for scaling
+  function applySpanClass(){
+    document.body.classList.remove('span-2','span-4','span-8','span-16');
+    const cls = `span-${state.ui.weeks}`;
+    document.body.classList.add(cls);
+  }
+
+  // compute days array for current span (day resolution)
   function rangeDays(){
-    const start=new Date(state.ui.start);
+    const start = new Date(state.ui.start);
     const totalDays = (state.ui.weeks || 2) * 7;
-    const days=[...Array(totalDays)].map((_,i)=> new Date(start.getFullYear(),start.getMonth(),start.getDate()+i));
-    return days.filter(d=>d>=START_MIN && d<=END_MAX);
+    const days = [...Array(totalDays)].map((_,i)=> new Date(start.getFullYear(), start.getMonth(), start.getDate()+i));
+    return days;
   }
 
+  // compute week starts (Mondays) for Gantt rows
+  function rangeWeeks(){
+    const start = new Date(state.ui.start);
+    const weeks = state.ui.weeks || 2;
+    return [...Array(weeks)].map((_,i)=> {
+      const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i*7);
+      d.setHours(0,0,0,0);
+      return d;
+    });
+  }
+
+  // Rendering
   function render(){
-    const days=rangeDays();
-    $('#rangeLabel').textContent = days.length? `${days[0].toLocaleDateString('de-AT')} – ${days[days.length-1].toLocaleDateString('de-AT')}` : '';
+    const days = rangeDays();
+    $('#rangeLabel').textContent = days.length ? `${days[0].toLocaleDateString('de-AT')} – ${days[days.length-1].toLocaleDateString('de-AT')}` : '';
     $('#stats').textContent = `${state.resources.length} Personen • ${state.projects.length} Projekt(e) • ${state.ui.weeks} Wochen`;
 
-    const grid=$('#grid'); grid.innerHTML='';
+    const grid = $('#grid'); grid.innerHTML = '';
+
     // header
-    const thead=document.createElement('thead');
-    const hr=document.createElement('tr');
-    const empty=document.createElement('th'); empty.className='head-sticky sticky dept'; empty.textContent='Beschreibung / Fachabteilung'; hr.appendChild(empty);
+    const thead = document.createElement('thead');
+    const hr = document.createElement('tr');
+    const empty = document.createElement('th'); empty.className = 'head-sticky sticky dept'; empty.textContent='Beschreibung / Fachabteilung'; hr.appendChild(empty);
+
     days.forEach(d=>{
-      const th=document.createElement('th'); th.className='head-sticky';
+      const th = document.createElement('th'); th.className='head-sticky';
       if(d.getDay()===0) th.classList.add('sunday');
-      th.textContent=fmtCW(d);
+      th.textContent = fmtCW(d) + ' ' + d.toLocaleDateString('de-AT',{day:'2-digit', month:'2-digit'});
       hr.appendChild(th);
     });
-    thead.appendChild(hr); grid.appendChild(thead);
+    thead.appendChild(hr);
+    grid.appendChild(thead);
 
-    const tbody=document.createElement('tbody');
+    const tbody = document.createElement('tbody');
 
     // Visible projects stacked
     state.projects.filter(p=>p.visible!==false).forEach((p,pi)=>{
       // project header row
-      const pr=document.createElement('tr'); const cell=document.createElement('th');
-      cell.className='sticky dept projHeader'; cell.textContent=p.name; pr.appendChild(cell);
-      days.forEach(d=>{ const td=document.createElement('td'); td.style.background='#0e1218'; if(d.getDay()===0) td.classList.add('sunday'); pr.appendChild(td); });
+      const pr = document.createElement('tr');
+      const cell = document.createElement('th');
+      cell.className='sticky dept projHeader';
+      cell.textContent = p.name;
+      pr.appendChild(cell);
+      days.forEach(d=>{
+        const td = document.createElement('td');
+        td.style.background = '#0e1218';
+        if(d.getDay()===0) td.classList.add('sunday');
+        pr.appendChild(td);
+      });
       tbody.appendChild(pr);
 
-      // Gantt rows (cell-level toggle)
+      // GANTT rows (weekly cells) — show dept label only (no 'GANTT' word)
+      rangeWeeks().forEach((weekStart, wIdx)=>{
+        GANTT.forEach(g=>{
+          // single row per gantt entry (we'll render weekly cells as one cell per week)
+          // but to keep ordering like before, create per GANTT a row iterating weeks — we will produce one overall row per GANTT, with week cells appended
+        });
+      });
+      // Instead render each GANTT as its own row with weekly cells:
       GANTT.forEach(g=>{
-        const tr=document.createElement('tr'); const th=document.createElement('th');
-        th.className='sticky dept'; th.textContent=g.label; tr.appendChild(th);
-        days.forEach(d=>{
-          const td=document.createElement('td'); td.className='cell';
-          if(d.getDay()===0) td.classList.add('sunday');
-          const dayISO=d.toISOString().slice(0,10);
-          const key=`${dayISO}|${g.key}`;
-          const val=p.data[key]||'';
-          if(val==='#g') td.classList.add('gcell-on');
-          td.addEventListener('click',()=>{ p.data[key]=(p.data[key]==='#g')?'':'#g'; save(); });
+        const tr = document.createElement('tr');
+        const th = document.createElement('th');
+        th.className='sticky dept ganttHead';
+        th.textContent = g.dept; // only dept code
+        tr.appendChild(th);
+
+        // for visual distinction between gantt and employee rows
+        rangeWeeks().forEach(weekStart=>{
+          const td = document.createElement('td');
+          td.className = 'gantt-cell ganttRow';
+          // mark sunday style for the week's sunday column: find the sunday of the week
+          const sunday = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate()+6);
+          if(sunday.getDay()===0) td.classList.add('sunday');
+
+          const weekISO = weekStart.toISOString().slice(0,10);
+          const key = `${weekISO}|W_${g.key}`;
+          const val = p.data[key] || '';
+          if(val === '#g') td.classList.add('gcell-on');
+
+          td.addEventListener('click', ()=> {
+            p.data[key] = (p.data[key] === '#g') ? '' : '#g';
+            save();
+          });
           tr.appendChild(td);
         });
         tbody.appendChild(tr);
       });
 
-      // Department rows (MD..PM)
+      // Department rows (MD..PM) — day‑level with multi-select
       DEPTS.forEach(dep=>{
-        const tr=document.createElement('tr'); const th=document.createElement('th');
-        th.className='sticky dept'; th.textContent=deptLabel(dep); tr.appendChild(th);
+        const tr = document.createElement('tr');
+        const th = document.createElement('th');
+        th.className='sticky dept';
+        th.textContent = deptLabel(dep);
+        tr.appendChild(th);
+
         days.forEach(d=>{
-          const td=document.createElement('td'); td.className='cell';
+          const td = document.createElement('td'); td.className='cell';
           if(d.getDay()===0) td.classList.add('sunday');
-          const dayISO=d.toISOString().slice(0,10);
-          const key=`${dayISO}|D_${dep}`;
-          td.textContent=p.data[key]||'';
-          td.addEventListener('click',()=> openMulti(td, dayISO, dep, p));
+          const dayISO = d.toISOString().slice(0,10);
+          const key = `${dayISO}|D_${dep}`;
+          td.textContent = p.data[key] || '';
+          td.addEventListener('click', ()=> openMulti(td, dayISO, dep, p));
+          // double-click immediate clear
+          td.addEventListener('dblclick', ()=>{
+            if(!p.data[key]) return;
+            if(confirm(`Alle Mitarbeitenden am ${new Date(dayISO).toLocaleDateString('de-AT')} für Projekt "${p.name}" entfernen?`)){
+              p.data[key] = '';
+              save();
+            }
+          });
           tr.appendChild(td);
         });
         tbody.appendChild(tr);
       });
 
       // Sum row
-      const sr=document.createElement('tr'); const sth=document.createElement('th');
+      const sr = document.createElement('tr'); const sth = document.createElement('th');
       sth.className='sticky dept sum'; sth.textContent='Summe Stunden (10 h × Anzahl Namen)'; sr.appendChild(sth);
-      days.forEach(d=>{ const td=document.createElement('td'); td.className='sum'; if(d.getDay()===0) td.classList.add('sunday'); td.textContent=String(sumHoursForDay(p, d.toISOString().slice(0,10))); sr.appendChild(td); });
+      days.forEach(d=>{
+        const td = document.createElement('td'); td.className='sum';
+        if(d.getDay()===0) td.classList.add('sunday');
+        td.textContent = String(sumHoursForDay(p, d.toISOString().slice(0,10)));
+        sr.appendChild(td);
+      });
       tbody.appendChild(sr);
+
+      // project gap row for clearer separation
+      const gap = document.createElement('tr'); gap.className='project-gap-row';
+      const gapTd = document.createElement('td'); gapTd.colSpan = days.length + 1;
+      gap.appendChild(gapTd);
+      tbody.appendChild(gap);
     });
 
     grid.appendChild(tbody);
@@ -285,126 +394,239 @@
     renderConflicts();
   }
 
-  function deptLabel(dep){ switch(dep){case'MD':return'MD (Mechanic Design)';case'ED':return'ED (Electrical Design)';case'SOW':return'SOW (Software)';case'MA':return'MA (Mechanical Assembly)';case'EA':return'EA (Electrical Assembly)';case'PM':return'PM (Project Management)';default:return dep;} }
+  function deptLabel(dep){
+    switch(dep){
+      case 'MD': return 'MD (Mechanic Design)';
+      case 'ED': return 'ED (Electrical Design)';
+      case 'SOW': return 'SOW (Software)';
+      case 'MA': return 'MA (Mechanical Assembly)';
+      case 'EA': return 'EA (Electrical Assembly)';
+      case 'PM': return 'PM (Project Management)';
+      default: return dep;
+    }
+  }
 
   function sumHoursForDay(project, dayISO){
-    let total=0;
-    DEPTS.forEach(dep=>{ const key=`${dayISO}|D_${dep}`; const s=project.data[key]||''; if(s.trim()){ const n=s.split(' | ').filter(Boolean).length; total+=n*HOURS_PER_DAY; } });
+    let total = 0;
+    DEPTS.forEach(dep=>{
+      const key = `${dayISO}|D_${dep}`;
+      const s = project.data[key] || '';
+      if(s.trim()){
+        const n = s.split(' | ').filter(Boolean).length;
+        total += n * HOURS_PER_DAY;
+      }
+    });
     return total;
   }
 
-  // ====== Multi‑Select (per project) ======
-  const menu=$('#multiMenu'); let menuAnchor=null; let menuCtx=null;
+  // ===== Multi‑Select (per project) ======
+  const menu = $('#multiMenu'); let menuAnchor = null; let menuCtx = null;
   function openMulti(anchor, dayISO, dep, project){
-    menuAnchor=anchor; menuCtx={ dayISO, dep, project };
-    const rect=anchor.getBoundingClientRect(); menu.style.left = `${rect.left}px`; menu.style.top = `${rect.bottom+4}px`;
-    menu.innerHTML='';
-    const search=document.createElement('input'); search.type='search'; search.placeholder='Suchen…'; menu.appendChild(search);
-    const list=document.createElement('div'); menu.appendChild(list);
+    menuAnchor = anchor; menuCtx = { dayISO, dep, project };
+    const rect = anchor.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, rect.left)}px`;
+    menu.style.top = `${rect.bottom + 6}px`;
+    menu.innerHTML = '';
+
+    const search = document.createElement('input'); search.type='search'; search.placeholder='Suchen…'; menu.appendChild(search);
+
+    const btnClear = document.createElement('button'); btnClear.textContent = 'Alle entfernen'; btnClear.style.marginBottom = '8px';
+    btnClear.onclick = ()=>{
+      if(confirm('Alle Mitarbeitenden aus dieser Zelle entfernen?')){
+        const key = `${dayISO}|D_${dep}`; project.data[key] = ''; save();
+      }
+    };
+    menu.appendChild(btnClear);
+
+    const list = document.createElement('div'); menu.appendChild(list);
+
     function rebuild(){
-      list.innerHTML='';
-      const filter=(search.value||'').toLowerCase();
+      list.innerHTML = '';
+      const filter = (search.value || '').toLowerCase();
       const selected = getCellAssignments(project, dayISO, dep);
-      state.resources.filter(n=>n.toLowerCase().includes(filter)).forEach(name=>{
-        const it=document.createElement('label'); it.className='item';
-        const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=selected.includes(name);
-        cb.addEventListener('change',()=> toggleAssign(name));
-        const span=document.createElement('span'); span.textContent=name;
+      state.resources.filter(r=> r.name.toLowerCase().includes(filter)).forEach(res=>{
+        const it = document.createElement('label'); it.className='item';
+        const cb = document.createElement('input'); cb.type='checkbox'; cb.checked = selected.includes(res.name);
+        cb.addEventListener('change', ()=> toggleAssign(res.name));
+        const span = document.createElement('span'); span.textContent = res.name + ' ';
+        const dspan = document.createElement('span'); dspan.className='dept'; dspan.textContent = res.dept;
+        span.appendChild(dspan);
         it.appendChild(cb); it.appendChild(span); list.appendChild(it);
       });
     }
     function toggleAssign(name){
-      const key=`${dayISO}|D_${dep}`; const cur=(project.data[key]||'').split(' | ').filter(Boolean);
-      const idx=cur.indexOf(name); if(idx>=0) cur.splice(idx,1); else cur.push(name);
-      project.data[key]=cur.join(' | '); save();
+      const key = `${dayISO}|D_${dep}`; const cur = (project.data[key] || '').split(' | ').filter(Boolean);
+      const idx = cur.indexOf(name); if(idx>=0) cur.splice(idx,1); else cur.push(name);
+      project.data[key] = cur.join(' | ');
+      save();
     }
     search.addEventListener('input', rebuild);
     menu.classList.add('open'); rebuild();
-    const close=(e)=>{ if(e && (menu.contains(e.target)|| e.target===anchor)) return; menu.classList.remove('open'); document.removeEventListener('mousedown', close); };
+    const close = (e) => { if(e && (menu.contains(e.target) || e.target === anchor)) return; menu.classList.remove('open'); document.removeEventListener('mousedown', close); };
     setTimeout(()=> document.addEventListener('mousedown', close));
   }
-  function getCellAssignments(project, dayISO, dep){ const key=`${dayISO}|D_${dep}`; const s=project.data[key]||''; return s? s.split(' | '):[]; }
 
-  // ====== Resource management ======
+  function getCellAssignments(project, dayISO, dep){ const key = `${dayISO}|D_${dep}`; const s = project.data[key] || ''; return s ? s.split(' | ').filter(Boolean) : []; }
+
+  // ===== Resource management (list, add, rename, change dept, delete) =====
   function renderResources(){
-    const box=$('#resList'); box.innerHTML='';
-    state.resources.forEach((name,i)=>{
-      const row=document.createElement('div'); row.className='row';
-      const tag=document.createElement('span'); tag.className='tag'; tag.textContent=name; row.appendChild(tag);
-      const del=document.createElement('button'); del.textContent='Löschen'; del.onclick=()=>{ state.resources.splice(i,1); save(); };
-      row.appendChild(del); box.appendChild(row);
-    })
-  }
-  $('#addResBtn').onclick=()=>{ const v=$('#newRes').value.trim(); if(!v) return; if(!state.resources.includes(v)){ state.resources.push(v); save(); } $('#newRes').value=''; };
+    const box = $('#resList'); box.innerHTML = '';
+    state.resources.forEach((res, i) => {
+      const row = document.createElement('div'); row.className = 'res-row';
+      const left = document.createElement('div');
+      const tag = document.createElement('span'); tag.className='tag'; tag.textContent = res.name;
+      const deptSpan = document.createElement('span'); deptSpan.className='dept'; deptSpan.textContent = res.dept;
+      tag.appendChild(deptSpan);
+      left.appendChild(tag);
 
-  // ====== Project filters ======
+      const controls = document.createElement('div'); controls.className='res-controls';
+      const rename = document.createElement('button'); rename.textContent = 'Umbenennen';
+      rename.onclick = ()=> {
+        const newName = prompt('Neuer Name:', res.name);
+        if(!newName) return;
+        // update name in resources and in all project data (replace occurrences)
+        const old = res.name;
+        res.name = newName;
+        state.projects.forEach(p=>{
+          Object.entries(p.data).forEach(([k,v])=>{
+            if(!v) return;
+            const parts = v.split(' | ').map(x=>x.trim());
+            const replaced = parts.map(x => x===old ? newName : x);
+            p.data[k] = replaced.filter(Boolean).join(' | ');
+          });
+        });
+        save();
+      };
+      const deptBtn = document.createElement('select');
+      deptBtn.className = 'dept-select';
+      DEPTS.concat(['PM']).forEach(d=>{
+        const opt = document.createElement('option'); opt.value = d; opt.textContent = d;
+        if(res.dept === d) opt.selected = true;
+        deptBtn.appendChild(opt);
+      });
+      deptBtn.onchange = (e) => { res.dept = e.target.value; save(); };
+
+      const del = document.createElement('button'); del.textContent = 'Löschen';
+      del.onclick = ()=>{
+        if(!confirm(`"${res.name}" wirklich löschen? Alle Zuweisungen bleiben als Text, entferne manuell in Zellen falls nötig.`)) return;
+        state.resources.splice(i,1);
+        // also remove from any project data cells
+        state.projects.forEach(p=>{
+          Object.keys(p.data).forEach(k=>{
+            if(!p.data[k]) return;
+            const arr = p.data[k].split(' | ').filter(Boolean).filter(x=> x !== res.name);
+            p.data[k] = arr.join(' | ');
+          });
+        });
+        save();
+      };
+
+      controls.appendChild(rename);
+      controls.appendChild(deptBtn);
+      controls.appendChild(del);
+
+      row.appendChild(left);
+      row.appendChild(controls);
+      box.appendChild(row);
+    });
+  }
+
+  $('#addResBtn').onclick = ()=>{
+    const name = $('#newRes').value.trim();
+    const dept = $('#newResDept').value || 'MD';
+    if(!name) return;
+    if(state.resources.some(r=> r.name === name)){ alert('Mitarbeiter existiert bereits'); return; }
+    state.resources.push({ name, dept });
+    $('#newRes').value = '';
+    save();
+  };
+
+  // ===== Project filters/build =====
   function buildProjectFilters(){
-    const box=$('#projectFilters'); box.innerHTML='';
+    const box = $('#projectFilters'); box.innerHTML = '';
     state.projects.forEach((p,idx)=>{
-      if(typeof p.visible==='undefined') p.visible=true;
-      const label=document.createElement('label');
-      const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=p.visible; cb.onchange=()=>{ p.visible=cb.checked; save(); };
-      const span=document.createElement('span'); span.textContent=p.name;
+      if(typeof p.visible === 'undefined') p.visible = true;
+      const label = document.createElement('label');
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = p.visible;
+      cb.onchange = ()=> { p.visible = cb.checked; save(); };
+      const span = document.createElement('span'); span.textContent = p.name;
       label.appendChild(cb); label.appendChild(span); box.appendChild(label);
     });
   }
-  $('#btnAllOn').onclick=()=>{ state.projects.forEach(p=>p.visible=true); save(); buildProjectFilters(); };
-  $('#btnAllOff').onclick=()=>{ state.projects.forEach(p=>p.visible=false); save(); buildProjectFilters(); };
-  $('#addProjectBtn').onclick=()=>{ const name=prompt('Projektname?','Neues Projekt'); if(!name) return; state.projects.push({id:crypto.randomUUID(), name, visible:true, data:{}}); save(); buildProjectFilters(); };
-  $('#renameProjectBtn').onclick=()=>{
-    const names=state.projects.map((p,i)=>`${i+1}. ${p.name}`).join('\n');
-    const idx=prompt(`Welche Projektnummer umbenennen?\n${names}`); const i=parseInt(idx,10)-1;
+  $('#btnAllOn').onclick = ()=>{ state.projects.forEach(p=> p.visible=true); save(); buildProjectFilters(); };
+  $('#btnAllOff').onclick = ()=>{ state.projects.forEach(p=> p.visible=false); save(); buildProjectFilters(); };
+  $('#addProjectBtn').onclick = ()=>{ const name = prompt('Projektname?','Neues Projekt'); if(!name) return; state.projects.push({ id: crypto.randomUUID(), name, visible:true, data: {} }); save(); buildProjectFilters(); };
+  $('#renameProjectBtn').onclick = ()=>{
+    const names = state.projects.map((p,i)=> `${i+1}. ${p.name}`).join('\n');
+    const idx = prompt(`Welche Projektnummer umbenennen?\n${names}`); const i = parseInt(idx,10)-1;
     if(isNaN(i)||i<0||i>=state.projects.length) return;
-    const newName=prompt('Neuer Projektname:', state.projects[i].name); if(!newName) return;
-    state.projects[i].name=newName; save(); buildProjectFilters();
+    const newName = prompt('Neuer Projektname:', state.projects[i].name); if(!newName) return;
+    state.projects[i].name = newName; save(); buildProjectFilters();
   };
 
-  // ====== Navigation ======
-  startDateInput.onchange=(e)=>{ state.ui.start = normStart(e.target.value); save(); };
-  $('#prevWeek').onclick=()=>{ const d=new Date(state.ui.start); d.setDate(d.getDate()-7); state.ui.start=normStart(d.toISOString().slice(0,10)); save(); };
-  $('#nextWeek').onclick=()=>{ const d=new Date(state.ui.start); d.setDate(d.getDate()+7); state.ui.start=normStart(d.toISOString().slice(0,10)); save(); };
+  // ===== Navigation =====
+  startDateInput.onchange = (e)=>{ state.ui.start = normStart(e.target.value); save(); };
+  $('#prevWeek').onclick = ()=>{ const d = new Date(state.ui.start); d.setDate(d.getDate() - 7); state.ui.start = normStart(d.toISOString().slice(0,10)); save(); };
+  $('#nextWeek').onclick = ()=>{ const d = new Date(state.ui.start); d.setDate(d.getDate() + 7); state.ui.start = normStart(d.toISOString().slice(0,10)); save(); };
 
-  // ====== Conflicts ======
+  // ===== Conflicts =====
   function renderConflicts(){
-    const box=$('#conflicts'); box.innerHTML='';
-    const issues=findConflicts();
-    if(!issues.length){ const ok=document.createElement('div'); ok.className='pill ok'; ok.textContent='Keine Konflikte'; box.appendChild(ok); return; }
-    issues.sort((a,b)=>a.dateISO.localeCompare(b.dateISO)||a.name.localeCompare(b.name));
-    issues.forEach(it=>{ const div=document.createElement('div'); div.className='conflict'; div.textContent = `${new Date(it.dateISO).toLocaleDateString('de-AT')}: ${it.name} (${it.cnt} Projekte)`; box.appendChild(div); });
+    const box = $('#conflicts'); box.innerHTML = '';
+    const issues = findConflicts();
+    if(!issues.length){ const ok = document.createElement('div'); ok.className='pill ok'; ok.textContent = 'Keine Konflikte'; box.appendChild(ok); return; }
+    issues.sort((a,b)=>a.dateISO.localeCompare(b.dateISO) || a.name.localeCompare(b.name));
+    issues.forEach(it=>{ const div = document.createElement('div'); div.className='conflict'; div.textContent = `${new Date(it.dateISO).toLocaleDateString('de-AT')}: ${it.name} (${it.cnt} Projekte)`; box.appendChild(div); });
   }
   function findConflicts(){
-    const map=new Map(); // dateISO -> name -> count
+    const map = new Map(); // dateISO -> name -> count
     state.projects.forEach(p=>{
       Object.entries(p.data).forEach(([k,val])=>{
-        const [dateISO,rowKey]=k.split('|'); if(!rowKey.startsWith('D_')) return; if(!val) return;
-        const names=val.split(' | ').filter(Boolean);
-        names.forEach(name=>{ const m1=map.get(dateISO)||new Map(); m1.set(name,(m1.get(name)||0)+1); map.set(dateISO,m1); });
+        const [dateISO,rowKey] = k.split('|'); if(!rowKey || !rowKey.startsWith('D_')) return; if(!val) return;
+        const names = val.split(' | ').filter(Boolean);
+        names.forEach(name=>{
+          const m1 = map.get(dateISO) || new Map();
+          m1.set(name, (m1.get(name)||0) + 1);
+          map.set(dateISO, m1);
+        });
       });
     });
-    const issues=[]; map.forEach((m,dateISO)=>{ m.forEach((cnt,name)=>{ if(cnt>1) issues.push({dateISO,name,cnt}); }) });
+    const issues = [];
+    map.forEach((m,dateISO)=>{
+      m.forEach((cnt,name)=>{
+        if(cnt>1) issues.push({ dateISO, name, cnt });
+      });
+    });
     return issues;
   }
 
-  // ====== Export / Import ======
-  $('#exportBtn').onclick=()=>{
-    const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='ressourcenplan.json'; a.click(); URL.revokeObjectURL(a.href);
+  // ===== Export / Import =====
+  $('#exportBtn').onclick = ()=>{
+    const exportState = JSON.parse(JSON.stringify(state));
+    const blob = new Blob([JSON.stringify(exportState,null,2)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ressourcenplan.json'; a.click(); URL.revokeObjectURL(a.href);
   };
-  $('#importBtn').onclick=()=> $('#importFile').click();
-  $('#importFile').addEventListener('change',async(e)=>{
-    const file=e.target.files[0]; if(!file) return; const txt=await file.text();
-    try{ const data=JSON.parse(txt); Object.assign(state, data); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); init(); }catch(err){ alert('Ungültige Datei'); }
+  $('#importBtn').onclick = ()=> $('#importFile').click();
+  $('#importFile').addEventListener('change', async (e)=>{
+    const file = e.target.files[0]; if(!file) return;
+    const txt = await file.text();
+    try{
+      const data = JSON.parse(txt);
+      // basic validation and merge
+      if(data.resources) state.resources = data.resources.map(r => typeof r === 'string' ? { name: r, dept: 'MD' } : { name: r.name || 'Unnamed', dept: r.dept || 'MD' });
+      if(data.projects) state.projects = data.projects;
+      if(data.ui) state.ui = Object.assign(state.ui || {}, data.ui);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      init();
+    }catch(err){ alert('Ungültige Datei'); }
   });
 
-  // ====== Mitarbeiterübersicht: berechnen und Modal anzeigen (pro Tag Projekte) =====
-  function buildEmployeeOverview() {
+  // ===== Mitarbeiterübersicht: pro Tag Projekte =====
+  function buildEmployeeOverview(){
     const days = rangeDays();
-    const visibleProjects = state.projects.filter(p=>p.visible!==false);
-    // overview entries: { name, perDay: [ string (project names joined) ... ] }
+    const visibleProjects = state.projects.filter(p=> p.visible !== false);
     const overviewMap = new Map();
-    state.resources.forEach(name=> overviewMap.set(name, { name, perDay: days.map(()=>[]) }));
+    state.resources.forEach(r => overviewMap.set(r.name, { name: r.name, perDay: days.map(()=>[]) }));
 
-    // iterate visible projects, for each day see if resource occurs in any D_ cell -> add project name to that person's day
     visibleProjects.forEach(p=>{
       days.forEach((d, idx)=>{
         const dayISO = d.toISOString().slice(0,10);
@@ -422,43 +644,29 @@
       });
     });
 
-    // convert lists to joined strings (or empty)
-    const overview = Array.from(overviewMap.values()).map(o=>{
-      return {
-        name: o.name,
-        perDay: o.perDay.map(arr => arr.length? arr.join(' | '): '')
-      };
-    }).sort((a,b)=>a.name.localeCompare(b.name));
-
+    const overview = Array.from(overviewMap.values()).map(o=> ({ name: o.name, perDay: o.perDay.map(arr => arr.length ? arr.join(' | ') : '') })).sort((a,b)=> a.name.localeCompare(b.name));
     return { overview, days };
   }
 
   function showOverviewModal(){
     const { overview, days } = buildEmployeeOverview();
-    const content = $('#overviewContent');
-    content.innerHTML = '';
-
-    const hdr = document.createElement('div');
-    hdr.className = 'small muted';
+    const content = $('#overviewContent'); content.innerHTML = '';
+    const hdr = document.createElement('div'); hdr.className='small muted';
     hdr.textContent = `Zeitraum: ${days[0]?.toLocaleDateString('de-AT') || '-'} – ${days[days.length-1]?.toLocaleDateString('de-AT') || '-'}`;
     content.appendChild(hdr);
 
     const tbl = document.createElement('table');
-    const thead = document.createElement('thead');
-    // header row: Name + each day
-    const hdrRow = document.createElement('tr');
+    const thead = document.createElement('thead'); const hdrRow = document.createElement('tr');
     const thName = document.createElement('th'); thName.textContent = 'Name'; hdrRow.appendChild(thName);
     days.forEach(d=>{
       const th = document.createElement('th');
-      // show weekday short + day.month (z.B. Mo 10.11)
       const weekday = d.toLocaleDateString('de-AT',{weekday:'short'});
       const shortDate = `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}`;
       th.textContent = `${weekday} ${shortDate}`;
       if(d.getDay()===0) th.classList.add('sunday');
       hdrRow.appendChild(th);
     });
-    thead.appendChild(hdrRow);
-    tbl.appendChild(thead);
+    thead.appendChild(hdrRow); tbl.appendChild(thead);
 
     const tbody = document.createElement('tbody');
     overview.forEach(o=>{
@@ -466,10 +674,8 @@
       const tdName = document.createElement('td'); tdName.textContent = o.name; tr.appendChild(tdName);
       o.perDay.forEach((cellText, idx)=>{
         const td = document.createElement('td'); td.className='project-cell';
-        const d = days[idx];
-        if(d.getDay()===0) td.classList.add('sunday');
-        if(cellText) td.innerHTML = escapeHtml(cellText);
-        else td.innerHTML = '<span class="empty">—</span>';
+        const d = days[idx]; if(d.getDay()===0) td.classList.add('sunday');
+        td.innerHTML = cellText ? escapeHtml(cellText) : '<span class="empty">—</span>';
         tr.appendChild(td);
       });
       tbody.appendChild(tr);
@@ -477,37 +683,29 @@
     tbl.appendChild(tbody);
     content.appendChild(tbl);
 
-    // open modal
-    const overlay = $('#overviewModal');
-    overlay.classList.add('open');
-    overlay.setAttribute('aria-hidden','false');
+    const overlay = $('#overviewModal'); overlay.classList.add('open'); overlay.setAttribute('aria-hidden','false');
     document.getElementById('closeOverview').focus();
   }
 
-  // simple escape to avoid injection in table cells (names come from user input)
   function escapeHtml(s){ return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;'); }
 
   // handlers
   $('#overviewBtn').onclick = showOverviewModal;
-  $('#closeOverview').onclick = ()=>{
-    const overlay = $('#overviewModal');
-    overlay.classList.remove('open');
-    overlay.setAttribute('aria-hidden','true');
-  };
-  // close by clicking outside the modal content
-  document.getElementById('overviewModal').addEventListener('click', (e)=>{
-    if(e.target === e.currentTarget){
-      e.currentTarget.classList.remove('open');
-      e.currentTarget.setAttribute('aria-hidden','true');
-    }
+  $('#closeOverview').onclick = ()=>{ const overlay = $('#overviewModal'); overlay.classList.remove('open'); overlay.setAttribute('aria-hidden','true'); };
+  document.getElementById('overviewModal').addEventListener('click', (e)=>{ if(e.target === e.currentTarget){ e.currentTarget.classList.remove('open'); e.currentTarget.setAttribute('aria-hidden','true'); } });
+
+  // keyboard
+  window.addEventListener('keydown', (e)=>{
+    if(e.key === 'Escape'){ document.querySelectorAll('.menu.open').forEach(m=>m.classList.remove('open')); const om = document.getElementById('overviewModal'); if(om) om.classList.remove('open'); }
+    if(e.ctrlKey && e.key === 'ArrowLeft'){ $('#prevWeek').click(); }
+    if(e.ctrlKey && e.key === 'ArrowRight'){ $('#nextWeek').click(); }
   });
 
-  // Init
-  window.addEventListener('keydown', (e)=>{
-    if(e.key==='Escape'){ document.querySelectorAll('.menu.open').forEach(m=>m.classList.remove('open')); const om = document.getElementById('overviewModal'); if(om) om.classList.remove('open'); }
-    if(e.ctrlKey && e.key==='ArrowLeft'){ $('#prevWeek').click(); }
-    if(e.ctrlKey && e.key==='ArrowRight'){ $('#nextWeek').click(); }
-  });
+  // Helpers
+  function fmtCW(d){ const dow = d.toLocaleDateString('de-AT',{weekday:'short'}).slice(0,2).toUpperCase(); const w = getISOWeek(d); return `${dow} CW${String(w).padStart(2,'0')}`; }
+  function getISOWeek(date){ const d = new Date(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate())); const dayNum = d.getUTCDay()||7; d.setUTCDate(d.getUTCDate()+4-dayNum); const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1)); return Math.ceil((((d-yearStart)/86400000)+1)/7); }
+
+  // Init app
   init();
   </script>
 </body>
