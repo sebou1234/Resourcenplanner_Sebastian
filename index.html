@@ -39,7 +39,7 @@
     .muted{color:#b9c1d1}
     .menu{position:absolute;top:100%;left:0;min-width:240px;max-height:260px;overflow:auto;background:#0f131a;border:1px solid #2b2f38;border-radius:10px;padding:8px;display:none;z-index:20}
     .menu.open{display:block}
-    .menu input[type="search"]{width:100%;Margin-bottom:6px}
+    .menu input[type="search"]{width:100%;margin-bottom:6px}
     .item{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
     .item:hover{background:#1a2230}
     .item input{accent-color:#5ccfe6}
@@ -55,15 +55,21 @@
     .filters button{padding:6px 8px}
     /* Modal from previous version kept out to simplify */
 
+    /* ===== Sonntag Hervorhebung ===== */
+    .sunday{ background: rgba(255,99,71,0.08); } /* helles Rot‑Tönung für Sonntage */
+    .head-sticky.sunday{ background: rgba(255,99,71,0.12); } /* etwas kräftiger für Kopfzeile */
+
     /* ===== Mitarbeiterübersicht Modal ===== */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;z-index:50}
     .modal-overlay.open{display:flex}
-    .modal{background:var(--card);border:1px solid #222;border-radius:12px;padding:16px;min-width:360px;max-width:80%;max-height:80%;overflow:auto;color:var(--text)}
+    .modal{background:var(--card);border:1px solid #222;border-radius:12px;padding:16px;min-width:360px;max-width:90%;max-height:80%;overflow:auto;color:var(--text)}
     .modal h3{margin:0;font-size:15px}
     .modal .modal-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
-    .modal table{width:100%;border-collapse:collapse;margin-top:6px}
+    .modal table{width:100%;border-collapse:collapse;margin-top:6px;white-space:nowrap}
     .modal th,.modal td{padding:6px 8px;border-bottom:1px solid #2b2f38;text-align:left}
     .modal .close{margin-left:auto;padding:6px 8px}
+    .modal .project-cell{font-size:13px;color:var(--text)}
+    .modal .empty{color:#9aa3b6;font-style:italic}
   </style>
 </head>
 <body>
@@ -195,7 +201,12 @@
     const thead=document.createElement('thead');
     const hr=document.createElement('tr');
     const empty=document.createElement('th'); empty.className='head-sticky sticky dept'; empty.textContent='Beschreibung / Fachabteilung'; hr.appendChild(empty);
-    days.forEach(d=>{ const th=document.createElement('th'); th.className='head-sticky'; th.textContent=fmtCW(d); hr.appendChild(th); });
+    days.forEach(d=>{
+      const th=document.createElement('th'); th.className='head-sticky';
+      if(d.getDay()===0) th.classList.add('sunday');
+      th.textContent=fmtCW(d);
+      hr.appendChild(th);
+    });
     thead.appendChild(hr); grid.appendChild(thead);
 
     const tbody=document.createElement('tbody');
@@ -205,7 +216,7 @@
       // project header row
       const pr=document.createElement('tr'); const cell=document.createElement('th');
       cell.className='sticky dept projHeader'; cell.textContent=p.name; pr.appendChild(cell);
-      days.forEach(()=>{ const td=document.createElement('td'); td.style.background='#0e1218'; pr.appendChild(td); });
+      days.forEach(d=>{ const td=document.createElement('td'); td.style.background='#0e1218'; if(d.getDay()===0) td.classList.add('sunday'); pr.appendChild(td); });
       tbody.appendChild(pr);
 
       // Gantt rows (cell-level toggle)
@@ -214,6 +225,7 @@
         th.className='sticky dept'; th.textContent=g.label; tr.appendChild(th);
         days.forEach(d=>{
           const td=document.createElement('td'); td.className='cell';
+          if(d.getDay()===0) td.classList.add('sunday');
           const dayISO=d.toISOString().slice(0,10);
           const key=`${dayISO}|${g.key}`;
           const val=p.data[key]||'';
@@ -230,6 +242,7 @@
         th.className='sticky dept'; th.textContent=deptLabel(dep); tr.appendChild(th);
         days.forEach(d=>{
           const td=document.createElement('td'); td.className='cell';
+          if(d.getDay()===0) td.classList.add('sunday');
           const dayISO=d.toISOString().slice(0,10);
           const key=`${dayISO}|D_${dep}`;
           td.textContent=p.data[key]||'';
@@ -242,7 +255,7 @@
       // Sum row
       const sr=document.createElement('tr'); const sth=document.createElement('th');
       sth.className='sticky dept sum'; sth.textContent='Summe Stunden (10 h × Anzahl Namen)'; sr.appendChild(sth);
-      days.forEach(d=>{ const td=document.createElement('td'); td.className='sum'; td.textContent=String(sumHoursForDay(p, d.toISOString().slice(0,10))); sr.appendChild(td); });
+      days.forEach(d=>{ const td=document.createElement('td'); td.className='sum'; if(d.getDay()===0) td.classList.add('sunday'); td.textContent=String(sumHoursForDay(p, d.toISOString().slice(0,10))); sr.appendChild(td); });
       tbody.appendChild(sr);
     });
 
@@ -363,16 +376,17 @@
     try{ const data=JSON.parse(txt); Object.assign(state, data); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); init(); }catch(err){ alert('Ungültige Datei'); }
   });
 
-  // ====== Mitarbeiterübersicht: berechnen und Modal anzeigen =====
+  // ====== Mitarbeiterübersicht: berechnen und Modal anzeigen (pro Tag Projekte) =====
   function buildEmployeeOverview() {
     const days = rangeDays();
     const visibleProjects = state.projects.filter(p=>p.visible!==false);
-    const map = new Map();
-    // initialize from known resources so they appear even when unassigned
-    state.resources.forEach(name => map.set(name, { assignments: 0, hours: 0 }));
+    // overview entries: { name, perDay: [ string (project names joined) ... ] }
+    const overviewMap = new Map();
+    state.resources.forEach(name=> overviewMap.set(name, { name, perDay: days.map(()=>[]) }));
 
-    visibleProjects.forEach(p => {
-      days.forEach(d=>{
+    // iterate visible projects, for each day see if resource occurs in any D_ cell -> add project name to that person's day
+    visibleProjects.forEach(p=>{
+      days.forEach((d, idx)=>{
         const dayISO = d.toISOString().slice(0,10);
         DEPTS.forEach(dep=>{
           const key = `${dayISO}|D_${dep}`;
@@ -380,28 +394,21 @@
           if(!cell) return;
           const names = cell.split(' | ').filter(Boolean);
           names.forEach(n=>{
-            if(!map.has(n)) map.set(n, { assignments: 0, hours: 0 });
-            const cur = map.get(n);
-            cur.assignments += 1;
-            cur.hours += HOURS_PER_DAY;
+            if(!overviewMap.has(n)) overviewMap.set(n, { name: n, perDay: days.map(()=>[]) });
+            const entry = overviewMap.get(n);
+            if(!entry.perDay[idx].includes(p.name)) entry.perDay[idx].push(p.name);
           });
         });
       });
     });
 
-    // summarize conflict days per person within visible projects/days
-    const conflicts = findConflicts();
-    const conflictCount = conflicts.reduce((acc,c)=>{
-      // only count conflict if date is within our current days and project visible (findConflicts is global)
-      const inWindow = (new Date(c.dateISO) >= new Date(days[0]) && new Date(c.dateISO) <= new Date(days[days.length-1]));
-      if(!inWindow) return acc;
-      acc[c.name] = (acc[c.name]||0) + 1;
-      return acc;
-    }, {});
-
-    const overview = Array.from(map.entries()).map(([name,info])=>({
-      name, assignments: info.assignments, hours: info.hours, conflicts: conflictCount[name]||0
-    })).sort((a,b)=>b.hours - a.hours || a.name.localeCompare(b.name));
+    // convert lists to joined strings (or empty)
+    const overview = Array.from(overviewMap.values()).map(o=>{
+      return {
+        name: o.name,
+        perDay: o.perDay.map(arr => arr.length? arr.join(' | '): '')
+      };
+    }).sort((a,b)=>a.name.localeCompare(b.name));
 
     return { overview, days };
   }
@@ -418,12 +425,33 @@
 
     const tbl = document.createElement('table');
     const thead = document.createElement('thead');
-    thead.innerHTML = `<tr><th>Name</th><th>Anzahl Einträge</th><th>Stunden</th><th>Konflikte (Tage)</th></tr>`;
+    // header row: Name + each day
+    const hdrRow = document.createElement('tr');
+    const thName = document.createElement('th'); thName.textContent = 'Name'; hdrRow.appendChild(thName);
+    days.forEach(d=>{
+      const th = document.createElement('th');
+      // show weekday short + day.month (z.B. Mo 10.11)
+      const weekday = d.toLocaleDateString('de-AT',{weekday:'short'});
+      const shortDate = `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}`;
+      th.textContent = `${weekday} ${shortDate}`;
+      if(d.getDay()===0) th.classList.add('sunday');
+      hdrRow.appendChild(th);
+    });
+    thead.appendChild(hdrRow);
     tbl.appendChild(thead);
+
     const tbody = document.createElement('tbody');
     overview.forEach(o=>{
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${escapeHtml(o.name)}</td><td>${o.assignments}</td><td>${o.hours}</td><td>${o.conflicts}</td>`;
+      const tdName = document.createElement('td'); tdName.textContent = o.name; tr.appendChild(tdName);
+      o.perDay.forEach((cellText, idx)=>{
+        const td = document.createElement('td'); td.className='project-cell';
+        const d = days[idx];
+        if(d.getDay()===0) td.classList.add('sunday');
+        if(cellText) td.innerHTML = escapeHtml(cellText);
+        else td.innerHTML = '<span class="empty">—</span>';
+        tr.appendChild(td);
+      });
       tbody.appendChild(tr);
     });
     tbl.appendChild(tbody);
