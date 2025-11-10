@@ -98,6 +98,21 @@ td[data-phase="CUS"].gcell-on         { background: rgba(239,68,68,0.12); }  /* 
     .res-row{display:flex;align-items:center;gap:8px;justify-content:space-between}
     .res-controls{display:flex;gap:6px;align-items:center}
     .dept-select{padding:6px;border-radius:8px;background:#121417;color:var(--text);border:1px solid #2b2f38}
+
+    /* füge im <style> ein */
+    td.gcell-trans {
+      /* transparent markiert: weiterhin kein voller Farbfüllung, aber leichtes Indiz */
+      background: transparent !important;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
+    }
+
+    /* leicht unterscheidbare sichtbare Farbfüllung (falls zusätzlich gewünscht) */
+    td.gcell-on { /* bestehende Regel bleibt, ggf anpassen */ }
+
+    /* Übersicht Modal (großes GANTT zum Malen) */
+    #ganttOverviewModal .modal { width: 95vw; max-width:1600px; max-height:90vh; }
+    #ganttOverviewModal table.grid { width:100%; }
+    #ganttOverviewModal td.res-mark { background: rgba(200,200,200,0.06); } /* Ressource markierung */
   </style>
 </head>
 <body>
@@ -125,6 +140,8 @@ td[data-phase="CUS"].gcell-on         { background: rgba(239,68,68,0.12); }  /* 
       <button id="exportBtn">Export JSON</button>
       <input type="file" id="importFile" style="display:none" accept="application/json"/>
       <button id="importBtn">Import JSON</button>
+      <button id="ganttPaintModeBtn" title="Wechsel zwischen farbig / transparent">Modus: Farbe</button>
+      <button id="ganttOverviewBtn" title="32-Wochen GANTT‑Übersicht">GANTT‑Übersicht</button>
     </div>
   </header>
 
@@ -182,6 +199,17 @@ td[data-phase="CUS"].gcell-on         { background: rgba(239,68,68,0.12); }  /* 
     </div>
   </div>
 
+  <!-- ===== GANTT‑Übersicht Modal (neu) ===== -->
+  <div id="ganttOverviewModal" class="modal-overlay" role="dialog" aria-hidden="true">
+    <div class="modal" role="document" aria-modal="true">
+      <div class="modal-head">
+        <h3>GANTT‑Übersicht (32 Wochen)</h3>
+        <button id="closeGanttOverview" class="small">Schließen</button>
+      </div>
+      <div id="ganttOverviewContent"></div>
+    </div>
+  </div>
+
   <script>
   // ====== Utility & constants ======
   const $ = sel => document.querySelector(sel);
@@ -205,6 +233,14 @@ let isGanttDrawing = false;
 let ganttDrawValue = null;
 let ganttDrawPhase = null;
 let ganttDrawProjectId = null;
+let ganttPaintMode = 'color'; // 'color' | 'transparent'
+
+function updateGanttPaintModeButton(){
+  const btn = document.getElementById('ganttPaintModeBtn');
+  if(!btn) return;
+  btn.textContent = ganttPaintMode === 'color' ? 'Modus: Farbe' : 'Modus: Transparent';
+}
+document.addEventListener('DOMContentLoaded', updateGanttPaintModeButton);
 
 // <-- Fehlende Konstanten ergänzt (wichtig) -->
 const HOURS_PER_DAY = 10;
@@ -283,6 +319,16 @@ const STORAGE_KEY = 'resplan_v3';
     });
   }
 
+  function rangeWeeksFrom(startISO, count){
+    const s = new Date(startISO);
+    s.setHours(0,0,0,0);
+    return [...Array(count)].map((_,i)=>{
+      const d = new Date(s.getFullYear(), s.getMonth(), s.getDate() + i*7);
+      d.setHours(0,0,0,0);
+      return d;
+    });
+  }
+
   // Rendering
   function render(){
     const days = rangeDays();
@@ -309,10 +355,25 @@ const STORAGE_KEY = 'resplan_v3';
 
     // Für jedes sichtbare Projekt: Header, dann GANTT-Phasen (je Phase eine Zeile, Wochen-Zellen)
     state.projects.filter(p=>p.visible!==false).forEach((p)=>{
-      // project header row (wie vorher)
+      // erzeugen timeline row (kopie der Kopfzeile, aber kleiner)
+      const timeline = document.createElement('tr');
+      const tEmpty = document.createElement('th');
+      tEmpty.className = 'head-sticky sticky dept';
+      tEmpty.textContent = ''; // leer über der Projektspalte
+      timeline.appendChild(tEmpty);
+      days.forEach(d=>{
+        const th = document.createElement('th');
+        if(d.getDay()===0) th.classList.add('sunday');
+        th.className = 'head-sticky';
+        th.textContent = fmtCW(d);
+        timeline.appendChild(th);
+      });
+      tbody.appendChild(timeline);
+
+      // jetzt wie vorher das project header row (pr)
       const pr = document.createElement('tr');
       const cell = document.createElement('th');
-      cell.className='sticky dept projHeader';
+      cell.className = 'sticky dept projHeader';
       cell.textContent = p.name;
       pr.appendChild(cell);
       days.forEach(d=>{
@@ -340,40 +401,59 @@ const STORAGE_KEY = 'resplan_v3';
 
           const weekISO = weekStart.toISOString().slice(0,10);
           const key = `${weekISO}|W_${p.id}_${phase.key}`; // unique per project+phase+week
-          // expose phase on the cell for CSS
           td.dataset.phase = phase.key;
-
-          // make the GANTT cell cover a whole week (7 days)
           td.colSpan = 7;
           td.style.cursor = 'pointer';
 
-          if(p.data[key] === '#g') td.classList.add('gcell-on');
+          // render state: support '#g' (color) and '#t' (transparent)
+          if(p.data[key] === '#g') {
+            td.classList.add('gcell-on');
+            td.classList.remove('gcell-trans');
+          } else if(p.data[key] === '#t') {
+            td.classList.add('gcell-trans');
+            td.classList.remove('gcell-on');
+          } else {
+            td.classList.remove('gcell-on','gcell-trans');
+          }
 
-          // click toggles this cell
+          // click toggles between off and currently selected paint style
           td.addEventListener('click', (e)=>{
-            const setOn = !(p.data[key] === '#g');
-            p.data[key] = setOn ? '#g' : '';
-            if(setOn) td.classList.add('gcell-on'); else td.classList.remove('gcell-on');
+            const currently = p.data[key] || '';
+            const willSet = (currently === '') ? (ganttPaintMode === 'color' ? '#g' : '#t') : '';
+            p.data[key] = willSet;
+            // update classes immediately
+            if(willSet === '#g'){ td.classList.add('gcell-on'); td.classList.remove('gcell-trans'); }
+            else if(willSet === '#t'){ td.classList.add('gcell-trans'); td.classList.remove('gcell-on'); }
+            else { td.classList.remove('gcell-on','gcell-trans'); }
             save();
           });
 
-          // mousedown+drag painting (only within same project+phase)
+          // mousedown: begin paint-mode using current paint mode
           td.addEventListener('mousedown', (e)=>{
             e.preventDefault();
             isGanttDrawing = true;
             ganttDrawPhase = phase.key;
             ganttDrawProjectId = p.id;
-            const setOn = !(p.data[key] === '#g'); // decide paint mode by initial cell
-            ganttDrawValue = setOn;
-            p.data[key] = setOn ? '#g' : '';
-            if(setOn) td.classList.add('gcell-on'); else td.classList.remove('gcell-on');
+            // decide paint value: if current cell empty -> set to mode; if set -> toggle off (like click)
+            const currently = p.data[key] || '';
+            if(currently === ''){
+              ganttDrawValue = (ganttPaintMode === 'color') ? '#g' : '#t';
+            } else {
+              ganttDrawValue = ''; // erase when dragging from a filled cell
+            }
+            p.data[key] = ganttDrawValue;
+            if(ganttDrawValue === '#g'){ td.classList.add('gcell-on'); td.classList.remove('gcell-trans'); }
+            else if(ganttDrawValue === '#t'){ td.classList.add('gcell-trans'); td.classList.remove('gcell-on'); }
+            else { td.classList.remove('gcell-on','gcell-trans'); }
           });
 
-          // mouseenter still works for painting across week cells
+          // mouseenter paints if dragging
           td.addEventListener('mouseenter', ()=>{
             if(isGanttDrawing && ganttDrawPhase === phase.key && ganttDrawProjectId === p.id){
-              p.data[key] = ganttDrawValue ? '#g' : '';
-              if(ganttDrawValue) td.classList.add('gcell-on'); else td.classList.remove('gcell-on');
+              p.data[key] = ganttDrawValue;
+              if(ganttDrawValue === '#g'){ td.classList.add('gcell-on'); td.classList.remove('gcell-trans'); }
+              else if(ganttDrawValue === '#t'){ td.classList.add('gcell-trans'); td.classList.remove('gcell-on'); }
+              else { td.classList.remove('gcell-on','gcell-trans'); }
             }
           });
 
@@ -757,6 +837,139 @@ const STORAGE_KEY = 'resplan_v3';
 
   // Init app
   init();
+
+  // Register button handlers
+  document.getElementById('ganttPaintModeBtn').onclick = ()=>{
+    ganttPaintMode = ganttPaintMode === 'color' ? 'transparent' : 'color';
+    updateGanttPaintModeButton();
+  };
+
+  document.getElementById('ganttOverviewBtn').onclick = showGanttOverview;
+
+  function showGanttOverview(){
+    const modal = document.getElementById('ganttOverviewModal');
+    modal.classList.add('open'); modal.setAttribute('aria-hidden','false');
+    renderGanttOverview();
+  }
+
+  document.getElementById('closeGanttOverview').onclick = ()=>{
+    const modal = document.getElementById('ganttOverviewModal');
+    modal.classList.remove('open'); modal.setAttribute('aria-hidden','true');
+  };
+
+  function renderGanttOverview(){
+    const container = document.getElementById('ganttOverviewContent');
+    container.innerHTML = '';
+
+    const weeks = rangeWeeksFrom(state.ui.start, 32);
+    const tbl = document.createElement('table'); tbl.className = 'grid';
+    // header
+    const thead = document.createElement('thead');
+    const hr = document.createElement('tr');
+    const empty = document.createElement('th'); empty.className='head-sticky sticky dept'; empty.textContent='Projekt / Phase'; hr.appendChild(empty);
+    weeks.forEach(w=>{
+      const th = document.createElement('th'); th.className='head-sticky';
+      th.textContent = 'CW' + String(getISOWeek(w)).padStart(2,'0');
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr); tbl.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+
+    // Projekte + Phasen: gleiche Zeilen wie Haupt-GANTT, aber 32 columns
+    state.projects.filter(p=> p.visible !== false).forEach(p=>{
+      // project name row
+      const pr = document.createElement('tr');
+      const thp = document.createElement('th'); thp.className='sticky dept'; thp.textContent = p.name; pr.appendChild(thp);
+      weeks.forEach(w=>{
+        const td = document.createElement('td');
+        td.textContent = ''; // empty
+        pr.appendChild(td);
+      });
+      tbody.appendChild(pr);
+
+      // phases (paintable)
+      PHASES.forEach(phase=>{
+        const tr = document.createElement('tr');
+        const th = document.createElement('th'); th.className='sticky dept ganttHead'; th.textContent = phase.label; tr.appendChild(th);
+
+        weeks.forEach(w=>{
+          const wISO = w.toISOString().slice(0,10);
+          const key = `${wISO}|W_${p.id}_${phase.key}`;
+          const td = document.createElement('td');
+          td.style.cursor = 'pointer';
+          // display classes
+          if(p.data[key] === '#g') td.classList.add('gcell-on');
+          else if(p.data[key] === '#t') td.classList.add('gcell-trans');
+
+          // click/paint handlers (simple click + mousedown/enter painting)
+          td.addEventListener('click', ()=>{
+            const cur = p.data[key] || '';
+            p.data[key] = cur === '' ? (ganttPaintMode === 'color' ? '#g' : '#t') : '';
+            save();
+            renderGanttOverview();
+          });
+          let localDown = false;
+          td.addEventListener('mousedown', (e)=>{
+            e.preventDefault();
+            localDown = true;
+            const cur = p.data[key] || '';
+            const setVal = cur === '' ? (ganttPaintMode === 'color' ? '#g' : '#t') : '';
+            p.data[key] = setVal;
+            save();
+            renderGanttOverview();
+          });
+          td.addEventListener('mouseenter', ()=>{
+            if(localDown){
+              const cur = p.data[key] || '';
+              const setVal = cur === '' ? (ganttPaintMode === 'color' ? '#g' : '#t') : '';
+              p.data[key] = setVal;
+              save();
+              renderGanttOverview();
+            }
+          });
+          document.addEventListener('mouseup', ()=> localDown = false);
+          tr.appendChild(td);
+        });
+
+        tbody.appendChild(tr);
+      });
+
+      // Ressourcenzeile (vereinfachte Darstellung) — pro Resource eine Zeile, markiert, wenn in dieser Woche etwas geplant ist (any project)
+      const headerRes = document.createElement('tr'); const thRes = document.createElement('th'); thRes.className='sticky dept'; thRes.textContent = 'Ressourcen'; headerRes.appendChild(thRes);
+      tbody.appendChild(headerRes);
+      state.resources.forEach(res=>{
+        const rr = document.createElement('tr');
+        const nameTh = document.createElement('th'); nameTh.className='sticky dept'; nameTh.textContent = res.name; rr.appendChild(nameTh);
+        weeks.forEach(w=>{
+          const wISO = w.toISOString().slice(0,10);
+          // resource week is marked if this resource appears in any day-assignments in that week
+          let marked = false;
+          const daysOfWeek = [...Array(7)].map((_,i)=> {
+            const d = new Date(w.getFullYear(), w.getMonth(), w.getDate()+i);
+            return d.toISOString().slice(0,10);
+          });
+          state.projects.forEach(pp=>{
+            DEPTS.forEach(dep=>{
+              daysOfWeek.forEach(dayISO=>{
+                const key = `${dayISO}|D_${dep}`;
+                const cell = pp.data[key] || '';
+                if(cell && cell.split(' | ').includes(res.name)) marked = true;
+              });
+            });
+          });
+          const td = document.createElement('td');
+          if(marked) td.classList.add('res-mark');
+          rr.appendChild(td);
+        });
+        tbody.appendChild(rr);
+      });
+
+    });
+
+    tbl.appendChild(tbody);
+    container.appendChild(tbl);
+  }
   </script>
 </body>
 </html>
