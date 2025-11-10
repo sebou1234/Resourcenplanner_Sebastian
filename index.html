@@ -408,22 +408,14 @@ const STORAGE_KEY = 'resplan_v3';
 
           const weekISO = weekStart.toISOString().slice(0,10);
           const key = `${weekISO}|W_${p.id}_${phase.key}`;
-          td.dataset.phase = phase.key;
+          td.dataset.phase = phase.key;   // damit phase-spezifische CSS greift
           td.colSpan = 7;
           td.style.cursor = 'default'; // nicht interaktiv in der Normalansicht
 
-          // Darstellung: '#t' ist die "transparent"-Markierung (immer verwendet)
-          if(p.data[key] === '#t'){
-            td.classList.add('gcell-trans');
-          } else {
-            td.classList.remove('gcell-trans');
-          }
-
-          // markiert: zeige starke Farbe (phase-spezifisch)
-          if(p.data[key] === '#t'){
+          // Darstellung: markiert, wenn irgendein Flag (z.B. '#t' oder '#g') gesetzt ist
+          if(p.data[key]){
             td.classList.add('gcell-on');
           } else {
-            // nicht markiert: transparent / keine Füllung
             td.classList.remove('gcell-on');
           }
 
@@ -882,14 +874,22 @@ const STORAGE_KEY = 'resplan_v3';
           const weekISO = weekStart.toISOString().slice(0,10);
           const key = `${weekISO}|W_${p.id}_${phase.key}`;
 
-          // Anzeige basierend auf '#t' flag (transparent markiert)
-          if(p.data[key] === '#t') td.classList.add('gcell-trans'); else td.classList.remove('gcell-trans');
+          // dataset für phase damit die richtige Farbe angewendet wird
+          td.dataset.phase = phase.key;
 
-          // click toggles between off and '#t'
+          // Anzeige: markiert wenn Flag vorhanden (wir zeigen kräftige Farbe)
+          if(p.data[key]) {
+            td.classList.add('gcell-on');
+            td.classList.remove('gcell-trans');
+          } else {
+            td.classList.remove('gcell-on','gcell-trans');
+          }
+
+          // click toggles between off and '#t' (painting bleibt '#t' in modal)
           td.addEventListener('click', (e)=>{
             p.data[key] = (p.data[key] === '#t') ? '' : '#t';
             save();
-            renderGanttOverview(); // aktualisieren Übersicht
+            renderGanttOverview(); // sofort sichtbar
           });
 
           // painting: mousedown + mouseenter
@@ -898,15 +898,14 @@ const STORAGE_KEY = 'resplan_v3';
             isGanttDrawing = true;
             ganttDrawPhase = phase.key;
             ganttDrawProjectId = p.id;
-            // paint value: if current empty -> set '#t', else erase
             ganttDrawValue = (p.data[key] === '') ? '#t' : '';
             p.data[key] = ganttDrawValue;
-            if(ganttDrawValue === '#t') td.classList.add('gcell-trans'); else td.classList.remove('gcell-trans');
+            if(ganttDrawValue === '#t') td.classList.add('gcell-on'); else td.classList.remove('gcell-on');
           });
           td.addEventListener('mouseenter', ()=>{
             if(isGanttDrawing && ganttDrawPhase === phase.key && ganttDrawProjectId === p.id){
               p.data[key] = ganttDrawValue;
-              if(ganttDrawValue === '#t') td.classList.add('gcell-trans'); else td.classList.remove('gcell-trans');
+              if(ganttDrawValue === '#t') td.classList.add('gcell-on'); else td.classList.remove('gcell-on');
             }
           });
 
